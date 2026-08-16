@@ -15,7 +15,25 @@ An earlier version of this asked for the server address at runtime, on a bootstr
 
 ### Signing in with Google
 
-Google refuses to complete OAuth from an embedded WebView at all (it returns a `disallowed_useragent` error) — that's enforced on Google's end, not something any Capacitor setting works around. So "Connect Google Calendar" behaves differently here than in a normal browser tab: on native, it opens NextAuth's sign-in page in a real system browser component (`SFSafariViewController` on iOS, Chrome Custom Tabs on Android, via the `@capacitor/browser` plugin) instead of the in-app WebView. That's a Google-sanctioned browser context, so sign-in completes normally there. It shares cookie storage with the app's own WebView, so once you tap "Done" to come back, the app already has your session — no separate linking step.
+Google refuses to complete OAuth from an embedded WebView at all (it returns a `disallowed_useragent` error) — that's enforced on Google's end, not something any Capacitor setting works around. So "Connect Google Calendar" behaves differently here than in a normal browser tab: on native, it opens NextAuth's sign-in page in a real system browser component (`SFSafariViewController` on iOS, Chrome Custom Tabs on Android, via the `@capacitor/browser` plugin) instead of the in-app WebView. That's a Google-sanctioned browser context, so sign-in completes normally there.
+
+On iOS specifically, that browser's cookies are **not** shared with this app's own WKWebView — `SFSafariViewController` shares cookies with Safari.app device-wide, not with the private WebView of whichever app opened it. So instead of the session cookie just showing up back in the app, NextAuth's callback hands off a short-lived, single-use token through this app's own `decal://` URL scheme, which the app picks up and redeems with a normal same-origin request (see the comments in `apps/web/components/SignInGate.tsx` and `apps/web/app/api/auth/mobile-handoff/` for the full mechanism). **This needs one manual step after `cap add ios`** — register the URL scheme, or iOS has nowhere to hand that redirect off to:
+
+Open `ios/App/App/Info.plist` and add:
+
+```xml
+<key>CFBundleURLTypes</key>
+<array>
+  <dict>
+    <key>CFBundleURLSchemes</key>
+    <array>
+      <string>decal</string>
+    </array>
+  </dict>
+</array>
+```
+
+Without this, tapping "Connect Google Calendar" signs in fine in the browser sheet, but closing it back to the app leaves you signed out — iOS has no registered handler for `decal://` to route the handoff to.
 
 ## Prerequisites
 
@@ -79,6 +97,7 @@ Whenever you change `.env`, `capacitor.config.ts`, or add/remove a Capacitor plu
 
 ## What's not done yet
 
+- **Android sign-in hasn't been tested yet** — Chrome Custom Tabs (what `@capacitor/browser` opens on Android) may or may not share cookies with the app's WebView; if it doesn't, and you hit the same "signed in in the browser sheet, still signed out in the app" symptom, Android needs the equivalent of the iOS fix above: an intent filter for the `decal://` scheme in `android/app/src/main/AndroidManifest.xml` (the JS-side handoff logic in `SignInGate.tsx` already works cross-platform, it's only the native URL-scheme registration that's iOS-only right now).
 - **App icon / splash screen** — currently the Capacitor placeholder. [`@capacitor/assets`](https://github.com/ionic-team/capacitor-assets) can generate a full icon set from one source image once you have one.
 - **Push notifications** — `@capacitor/push-notifications` is already a dependency so the plugin's there, but nothing calls it yet. This is the natural next step after the app itself is running, since it needs a server-side piece too (registering device tokens, sending on chore-due/event-starting).
 - **Changing the server address without rebuilding** — right now `DECAL_SERVER_URL` is baked in at build time, so switching servers means editing `.env` and rebuilding. Fine for one family's own server; worth revisiting only if that address changes often.

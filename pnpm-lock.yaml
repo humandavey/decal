@@ -48,6 +48,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@capacitor/app':
+        specifier: ^6.0.1
+        version: 6.0.3(@capacitor/core@6.2.1)
       '@capacitor/browser':
         specifier: ^6.0.3
         version: 6.0.6(@capacitor/core@6.2.1)
