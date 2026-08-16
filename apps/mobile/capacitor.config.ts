@@ -41,7 +41,15 @@ const config: CapacitorConfig = {
     // production", but it's the standard pattern for a thin wrapper around
     // one self-hosted site (the Home Assistant companion app works the
     // same way), and it's what fixes the bug above.
-    ...(serverUrl ? { url: serverUrl } : {}),
+    //
+    // The `/m` suffix matters and is easy to lose track of: `url` is the
+    // *exact* page the WebView starts on, not just an origin to resolve
+    // paths against. Without it this loads "/" — the desktop kiosk
+    // dashboard's side-by-side layout — instead of the mobile-optimized
+    // bottom-tab routes under app/m/. Invisible before signing in (both
+    // show the same SignInGate screen when logged out), which is exactly
+    // why this went unnoticed until after sign-in actually worked.
+    ...(serverUrl ? { url: `${serverUrl}/m` } : {}),
     // Some self-hosted setups (a bare LAN IP, before a reverse proxy with a
     // real cert is set up) serve over plain HTTP. Both platforms block
     // that by default; these two flags are the standard, narrowly-scoped
