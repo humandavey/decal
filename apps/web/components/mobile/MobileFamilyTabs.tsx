@@ -128,6 +128,7 @@ export function MobileFamilyTabs() {
 
       {showSettings && (
         <FamilyModal
+          fullScreen
           onClose={() => setShowSettings(false)}
           onFamilyChanged={() => {
             setFamilyVersion((v) => v + 1);

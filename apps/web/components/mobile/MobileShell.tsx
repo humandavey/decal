@@ -79,7 +79,12 @@ export function MobileShell({ children }: { children: ReactNode }) {
     // decal-mobile: scopes the iOS input-zoom fix in globals.css to just
     // this route tree — see the comment there for why it's not global.
     <div className="decal-mobile" style={styles.shell}>
-      <div style={styles.content}>{children}</div>
+      {/* Keyed by pathname so switching bottom-nav tabs remounts this div —
+          that's what re-triggers decal-mobile-tab-in's fade-in each time,
+          instead of the new tab's content just snapping into place. */}
+      <div key={pathname} className="decal-mobile-tab-in" style={styles.content}>
+        {children}
+      </div>
       <nav style={styles.tabBar}>
         {TABS.map((tab) => {
           // Exact match for "/m" (else it'd stay lit on every sub-route);

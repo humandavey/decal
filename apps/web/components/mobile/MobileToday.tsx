@@ -198,6 +198,7 @@ export function MobileToday() {
 
       {selectedEvent && (
         <EventDetailModal
+          fullScreen
           event={selectedEvent}
           onClose={() => setSelectedEvent(null)}
           onChanged={() => {

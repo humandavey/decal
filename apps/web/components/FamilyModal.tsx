@@ -2,17 +2,23 @@
 
 import { useEffect } from "react";
 import { FamilyTab } from "./FamilyTab";
+import { MobileFullScreenModal } from "./mobile/MobileFullScreenModal";
 
 interface FamilyModalProps {
   onClose: () => void;
   /** Told when a family-wide setting (e.g. meal-prep toggles) changed, so
    * the parent can let anything else reading that setting refetch live. */
   onFamilyChanged: () => void;
+  /** Renders as a full-bleed slide-in screen instead of a centered dialog
+   * — see MobileFullScreenModal's comment. MobileFamilyTabs' settings icon
+   * passes this; the desktop "Family" header button doesn't. */
+  fullScreen?: boolean;
 }
 
 /** Overlay for family management — members, invite sharing, and (for the
- * owner) removing members. Opened from the "Family" button in the header. */
-export function FamilyModal({ onClose, onFamilyChanged }: FamilyModalProps) {
+ * owner) removing members. Opened from the "Family" button in the header
+ * on desktop, or the settings icon on mobile (see MobileFamilyTabs). */
+export function FamilyModal({ onClose, onFamilyChanged, fullScreen }: FamilyModalProps) {
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") onClose();
@@ -20,6 +26,14 @@ export function FamilyModal({ onClose, onFamilyChanged }: FamilyModalProps) {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
+
+  if (fullScreen) {
+    return (
+      <MobileFullScreenModal title="Family" eyebrow="Manage" onClose={onClose}>
+        <FamilyTab onFamilyChanged={onFamilyChanged} />
+      </MobileFullScreenModal>
+    );
+  }
 
   return (
     <div style={styles.overlay} onClick={onClose}>

@@ -9,6 +9,7 @@ import { contributorNames } from "@/lib/calendarDisplay";
 import { useFamilySyncListener } from "@/lib/useFamilySync";
 import { EventDetailModal } from "../EventDetailModal";
 import { QuickAddPanel } from "../QuickAddPanel";
+import { MobileFullScreenModal } from "./MobileFullScreenModal";
 import { getCached, setCached } from "@/lib/mobileCache";
 
 const AGENDA_DAYS = 21;
@@ -137,27 +138,19 @@ export function MobileAgenda() {
       )}
 
       {selectedEvent && (
-        <EventDetailModal event={selectedEvent} onClose={() => setSelectedEvent(null)} onChanged={load} />
+        <EventDetailModal fullScreen event={selectedEvent} onClose={() => setSelectedEvent(null)} onChanged={load} />
       )}
 
       {showQuickAdd && (
-        <div style={styles.quickAddOverlay} onClick={() => setShowQuickAdd(false)}>
-          <div style={styles.quickAddSheet} onClick={(e) => e.stopPropagation()}>
-            <button
-              type="button"
-              style={styles.quickAddClose}
-              onClick={() => setShowQuickAdd(false)}
-              aria-label="Close"
-            >
-              &times;
-            </button>
-            {/* Same component the desktop sidebar uses — self-contained,
-                already handles its own parse/preview/create flow and fires
-                the "calendar" sync event on success, which the
-                useFamilySyncListener above picks up. */}
-            <QuickAddPanel />
-          </div>
-        </div>
+        <MobileFullScreenModal title="Add event" eyebrow="Quick add" onClose={() => setShowQuickAdd(false)}>
+          {/* Same component the desktop sidebar uses — self-contained,
+              already handles its own parse/preview/create flow and fires
+              the "calendar" sync event on success, which the
+              useFamilySyncListener above picks up. `bare` skips its own
+              card chrome, since MobileFullScreenModal already supplies a
+              title and scrollable frame. */}
+          <QuickAddPanel bare />
+        </MobileFullScreenModal>
       )}
     </div>
   );
@@ -184,38 +177,6 @@ const styles: Record<string, React.CSSProperties> = {
     // Nudges the "+" glyph visually centered — most fonts render it
     // slightly above true center at this size.
     paddingBottom: 2
-  },
-  quickAddOverlay: {
-    position: "fixed",
-    inset: 0,
-    background: "rgba(10, 11, 14, 0.6)",
-    backdropFilter: "blur(2px)",
-    display: "flex",
-    alignItems: "flex-end",
-    zIndex: 50
-  },
-  quickAddSheet: {
-    position: "relative",
-    width: "100%",
-    maxHeight: "85vh",
-    overflowY: "auto",
-    background: "var(--color-ink-deep)",
-    borderTopLeftRadius: "var(--radius-card)",
-    borderTopRightRadius: "var(--radius-card)",
-    padding: "20px 16px calc(env(safe-area-inset-bottom, 0px) + 20px)"
-  },
-  quickAddClose: {
-    position: "absolute",
-    top: 12,
-    right: 12,
-    background: "transparent",
-    border: "none",
-    color: "var(--color-muted)",
-    fontSize: 24,
-    lineHeight: 1,
-    cursor: "pointer",
-    padding: 6,
-    zIndex: 1
   },
   eyebrow: {
     fontFamily: "var(--font-mono)",

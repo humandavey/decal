@@ -5,12 +5,18 @@ import { useSession } from "next-auth/react";
 import type { CalendarEvent } from "@decal/shared-types";
 import { parseEventDate } from "@/lib/dates";
 import { contributorNames, isMergedEvent } from "@/lib/calendarDisplay";
+import { MobileFullScreenModal } from "./mobile/MobileFullScreenModal";
 
 interface EventDetailModalProps {
   event: CalendarEvent;
   onClose: () => void;
   /** Told the event changed (saved or deleted) — parent should refetch. */
   onChanged: () => void;
+  /** Renders as a full-bleed slide-in screen (MobileFullScreenModal)
+   * instead of a centered dialog over a backdrop — see that component's
+   * comment for why. Mobile call sites (MobileToday, MobileAgenda) pass
+   * this; the desktop CalendarBoard doesn't, so its dialog is unchanged. */
+  fullScreen?: boolean;
 }
 
 const DATE_TIME = new Intl.DateTimeFormat("en-US", {
@@ -36,7 +42,7 @@ function toDateTimeLocal(iso: string) {
   )}`;
 }
 
-export function EventDetailModal({ event, onClose, onChanged }: EventDetailModalProps) {
+export function EventDetailModal({ event, onClose, onChanged, fullScreen }: EventDetailModalProps) {
   const { data: session } = useSession();
   const [mode, setMode] = useState<"view" | "edit">("view");
   const [title, setTitle] = useState(event.title);
@@ -134,31 +140,31 @@ export function EventDetailModal({ event, onClose, onChanged }: EventDetailModal
     }
   }
 
-  return (
-    <div style={styles.overlay} onClick={onClose}>
-      <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
-        <button type="button" style={styles.closeButton} onClick={onClose} aria-label="Close">
-          &times;
-        </button>
-
-        {mode === "view" ? (
-          <>
-            {isMergedEvent(event) ? (
-              <div style={styles.colorBarGroup}>
-                {event.contributors!.map((c) => (
-                  <span key={c.memberId} style={{ ...styles.colorBarSegment, background: c.color }} />
-                ))}
-              </div>
-            ) : (
-              <div style={{ ...styles.colorBar, background: event.color }} />
-            )}
-            {contributorNames(event) && (
-              <p style={{ ...styles.eyebrow, color: isMergedEvent(event) ? "var(--color-muted)" : event.color }}>
-                {contributorNames(event)}
-              </p>
-            )}
-            <h2 style={styles.title}>{event.title}</h2>
-            {isMergedEvent(event) && (
+  const body = (
+    <>
+      {mode === "view" ? (
+        <>
+          {isMergedEvent(event) ? (
+            <div style={styles.colorBarGroup}>
+              {event.contributors!.map((c) => (
+                <span key={c.memberId} style={{ ...styles.colorBarSegment, background: c.color }} />
+              ))}
+            </div>
+          ) : (
+            <div style={{ ...styles.colorBar, background: event.color }} />
+          )}
+          {contributorNames(event) && (
+            <p style={{ ...styles.eyebrow, color: isMergedEvent(event) ? "var(--color-muted)" : event.color }}>
+              {contributorNames(event)}
+            </p>
+          )}
+          {/* Full-screen mode already shows the title in
+              MobileFullScreenModal's own header — repeating it here as a
+              second, bigger heading right below it was redundant in a way
+              a floating desktop dialog doesn't have (there, this IS the
+              only place the title appears). */}
+          {!fullScreen && <h2 style={styles.title}>{event.title}</h2>}
+          {isMergedEvent(event) && (
               <p style={styles.mergedHint}>
                 Shown once for the whole family — editing or hiding only changes your own copy.
               </p>
@@ -209,7 +215,7 @@ export function EventDetailModal({ event, onClose, onChanged }: EventDetailModal
           </>
         ) : (
           <form onSubmit={save} style={styles.form}>
-            <h2 style={styles.formHeading}>Edit event</h2>
+            {!fullScreen && <h2 style={styles.formHeading}>Edit event</h2>}
             <label style={styles.label}>
               Title
               <input value={title} onChange={(e) => setTitle(e.target.value)} style={styles.input} />
@@ -265,6 +271,29 @@ export function EventDetailModal({ event, onClose, onChanged }: EventDetailModal
             </div>
           </form>
         )}
+    </>
+  );
+
+  if (fullScreen) {
+    return (
+      <MobileFullScreenModal
+        title={mode === "edit" ? "Edit event" : event.title}
+        eyebrow={mode === "view" ? contributorNames(event) ?? undefined : undefined}
+        eyebrowColor={isMergedEvent(event) ? "var(--color-muted)" : event.color}
+        onClose={onClose}
+      >
+        {body}
+      </MobileFullScreenModal>
+    );
+  }
+
+  return (
+    <div style={styles.overlay} onClick={onClose}>
+      <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
+        <button type="button" style={styles.closeButton} onClick={onClose} aria-label="Close">
+          &times;
+        </button>
+        {body}
       </div>
     </div>
   );

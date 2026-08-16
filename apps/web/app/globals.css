@@ -199,6 +199,33 @@ textarea {
   animation: decal-screensaver-in 0.7s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
+/* MobileFullScreenModal's entrance (event detail, family settings, quick
+   add on mobile) — a push-in from the right like native screen navigation,
+   instead of a dialog fading in over a backdrop. Paired with a plain
+   opacity fade rather than also animating the screen underneath sliding
+   left, since that underneath screen isn't visible at all once this one's
+   fully covering it — animating it too would be wasted motion. */
+@keyframes decal-mobile-screen-in {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+.decal-mobile-screen-in {
+  animation: decal-mobile-screen-in 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* MobileShell keys its content wrapper by pathname (see MobileShell.tsx),
+   so switching bottom-nav tabs remounts a fresh div and re-triggers this —
+   the same subtle settle-in decal-fade-in gives calendar view changes,
+   applied here to tab switches instead of a hard cut to the new screen. */
+.decal-mobile-tab-in {
+  animation: decal-fade-in 0.22s ease;
+}
+
 @media (max-width: 880px) {
   .decal-shell {
     flex-direction: column;

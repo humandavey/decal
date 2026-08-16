@@ -74,11 +74,20 @@ function addOneHour(timeStr: string) {
   return `${pad(Math.floor(total / 60))}:${pad(total % 60)}`;
 }
 
+interface QuickAddPanelProps {
+  /** Skips this component's own card chrome (border/background/heading) —
+   * for use inside something that already supplies a title and scrollable
+   * frame, like MobileFullScreenModal on mobile's quick-add screen. The
+   * desktop sidebar usage (CalendarBoard) omits this and gets the normal
+   * self-contained card. */
+  bare?: boolean;
+}
+
 /** Paste-text-to-event: paste something with a date in it, get back an
  * editable preview, confirm to create it on your own Google Calendar. Never
  * creates anything without a confirm — parsing (AI or local) can get
  * details wrong, so nothing is written until the person looks it over. */
-export function QuickAddPanel() {
+export function QuickAddPanel({ bare }: QuickAddPanelProps) {
   const [text, setText] = useState("");
   const [parsing, setParsing] = useState(false);
   const [parseError, setParseError] = useState<string | null>(null);
@@ -195,15 +204,9 @@ export function QuickAddPanel() {
     }
   }
 
-  return (
-    <section style={styles.panel}>
-      <div style={styles.header}>
-        <p style={styles.eyebrow}>Quick add</p>
-        <h3 style={styles.heading}>Paste to add an event</h3>
-      </div>
-
-      <div style={styles.body}>
-        {!draft ? (
+  const formBody = (
+    <>
+      {!draft ? (
           <form onSubmit={parse} style={styles.form}>
             <div style={styles.textareaWrap}>
               <textarea
@@ -327,7 +330,18 @@ export function QuickAddPanel() {
             </div>
           </div>
         )}
+    </>
+  );
+
+  if (bare) return formBody;
+
+  return (
+    <section style={styles.panel}>
+      <div style={styles.header}>
+        <p style={styles.eyebrow}>Quick add</p>
+        <h3 style={styles.heading}>Paste to add an event</h3>
       </div>
+      <div style={styles.body}>{formBody}</div>
     </section>
   );
 }
