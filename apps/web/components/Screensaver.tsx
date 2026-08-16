@@ -1,7 +1,14 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { describeWeatherCode, type WeatherIconKey } from "@/lib/weather";
+import { useFamilySyncListener } from "@/lib/useFamilySync";
+import type { FamilyNote } from "./NotesTab";
+
+const NOTES_LIMIT = 3;
+// No sync event fires on a schedule — this is just a safety net in case an
+// SSE reconnect gets missed while the screensaver's been up a long time.
+const NOTES_REFRESH_MS = 5 * 60 * 1000;
 
 // How long each photo stays up before crossfading to the next.
 const PHOTO_INTERVAL_MS = 25000;
@@ -147,6 +154,7 @@ export function Screensaver({ onDismiss }: ScreensaverProps) {
   const [urlB, setUrlB] = useState(randomPhotoUrl);
   const [now, setNow] = useState(() => new Date());
   const [weather, setWeather] = useState<WeatherState | null>(null);
+  const [notes, setNotes] = useState<FamilyNote[]>([]);
 
   useEffect(() => {
     frontIsARef.current = frontIsA;
@@ -189,6 +197,30 @@ export function Screensaver({ onDismiss }: ScreensaverProps) {
     };
   }, []);
 
+  const loadNotes = useCallback(async () => {
+    try {
+      const res = await fetch("/api/notes");
+      if (res.ok) {
+        const data = await res.json();
+        setNotes((data.notes as FamilyNote[]).slice(0, NOTES_LIMIT));
+      }
+    } catch {
+      // A nice-to-have overlay, not core to the screensaver working at all
+      // — a failed fetch just means it shows without the note stack.
+    }
+  }, []);
+
+  useEffect(() => {
+    loadNotes();
+    const notesTimer = setInterval(loadNotes, NOTES_REFRESH_MS);
+    return () => clearInterval(notesTimer);
+  }, [loadNotes]);
+
+  // A note posted (or taken down) elsewhere while the screensaver's up
+  // shows without waiting for the fallback timer above — this is the fast
+  // path, that timer is just a safety net for a missed SSE reconnect.
+  useFamilySyncListener(["notes"], loadNotes);
+
   const condition = weather?.current ? describeWeatherCode(weather.current.weatherCode, weather.current.isDay) : null;
 
   return (
@@ -205,6 +237,30 @@ export function Screensaver({ onDismiss }: ScreensaverProps) {
       <img src={urlA} alt="" style={{ ...styles.photo, opacity: frontIsA ? 1 : 0 }} />
       <img src={urlB} alt="" style={{ ...styles.photo, opacity: frontIsA ? 0 : 1 }} />
       <div style={styles.scrim} />
+
+      {notes.length > 0 && (
+        <div style={styles.notesStack}>
+          {notes.map((note, i) => (
+            <div
+              key={note.id}
+              style={{
+                ...styles.noteCard,
+                borderLeftColor: note.authorColor,
+                // A slight alternating tilt is the only thing separating
+                // this from a plain list — enough to read as "stuck up
+                // notes" without leaning on any external image/icon asset.
+                transform: `rotate(${i % 2 === 0 ? -1.2 : 1.2}deg)`
+              }}
+            >
+              <p style={styles.noteCardText}>{note.text}</p>
+              <p style={{ ...styles.noteCardAuthor, color: note.authorColor }}>
+                {note.authorName ?? "Someone"}
+              </p>
+            </div>
+          ))}
+        </div>
+      )}
+
       <div style={styles.content}>
         <p style={styles.time}>{TIME_FORMAT.format(now)}</p>
         <p style={styles.date}>{DATE_FORMAT.format(now)}</p>
@@ -278,5 +334,38 @@ const styles: Record<string, React.CSSProperties> = {
   weatherLabel: {
     fontSize: "clamp(14px, 1.6vw, 18px)",
     color: "rgba(237,233,225,0.85)"
+  },
+  notesStack: {
+    position: "absolute",
+    top: "6vh",
+    right: "5vw",
+    display: "flex",
+    flexDirection: "column",
+    gap: 14,
+    maxWidth: "min(340px, 30vw)"
+  },
+  noteCard: {
+    background: "rgba(20, 23, 29, 0.72)",
+    backdropFilter: "blur(6px)",
+    borderLeft: "3px solid transparent",
+    borderRadius: 10,
+    padding: "14px 16px",
+    boxShadow: "0 10px 30px rgba(0,0,0,0.35)"
+  },
+  noteCardText: {
+    color: "var(--color-paper)",
+    fontSize: "clamp(14px, 1.5vw, 17px)",
+    lineHeight: 1.4,
+    margin: "0 0 8px",
+    whiteSpace: "pre-wrap",
+    overflowWrap: "anywhere"
+  },
+  noteCardAuthor: {
+    fontFamily: "var(--font-mono)",
+    fontSize: 11.5,
+    letterSpacing: "0.06em",
+    textTransform: "uppercase",
+    margin: 0,
+    fontWeight: 600
   }
 };

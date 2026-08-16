@@ -87,3 +87,19 @@ export function getMonthGridDays(d: Date) {
   const gridStart = startOfWeek(firstOfMonth);
   return Array.from({ length: 42 }, (_, i) => addDays(gridStart, i));
 }
+
+/** "Just now", "12m ago", "3h ago", "2d ago", then falls back to a short
+ * date once it's far enough back that a relative label stops being useful
+ * (message-board notes, mainly). `now` is passed in rather than read here
+ * so callers can memoize without a hidden `Date.now()` dependency. */
+export function formatRelativeTime(date: Date, now: Date): string {
+  const diffMs = now.getTime() - date.getTime();
+  const diffMin = Math.round(diffMs / 60000);
+  if (diffMin < 1) return "Just now";
+  if (diffMin < 60) return `${diffMin}m ago`;
+  const diffHr = Math.round(diffMin / 60);
+  if (diffHr < 24) return `${diffHr}h ago`;
+  const diffDay = Math.round(diffHr / 24);
+  if (diffDay < 7) return `${diffDay}d ago`;
+  return SHORT_DATE.format(date);
+}

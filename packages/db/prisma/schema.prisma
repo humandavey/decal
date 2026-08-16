@@ -34,6 +34,7 @@ model User {
   mealPlansAssigned MealPlanEntry[]    @relation("MealAssignee")
   hiddenEvents      HiddenEvent[]
   groceryItemsAdded GroceryItem[]
+  notesAuthored     FamilyNote[]
 }
 
 model Account {
@@ -113,6 +114,7 @@ model Family {
   todoLists    TodoList[]
   hiddenEvents HiddenEvent[]
   groceryItems GroceryItem[]
+  notes        FamilyNote[]
 }
 
 // Join table: which users belong to which family, with a role and a
@@ -291,6 +293,26 @@ model GroceryItem {
 
   family  Family @relation(fields: [familyId], references: [id], onDelete: Cascade)
   addedBy User   @relation(fields: [addedById], references: [id], onDelete: Cascade)
+
+  @@index([familyId])
+}
+
+// ---------- Message board ----------
+// A shared sticky-note board — quick messages between family members
+// ("pick up milk", "back by 6"). Deliberately no "edited" concept, same as
+// a physical sticky note: you post a new one or take it down, you don't
+// revise it in place. Any family member can take any note down (a shared
+// board, not a private inbox), same precedent as chores/todos already
+// being manageable by anyone in the family, not just their creator.
+model FamilyNote {
+  id        String   @id @default(cuid())
+  familyId  String
+  authorId  String
+  text      String
+  createdAt DateTime @default(now())
+
+  family Family @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  author User   @relation(fields: [authorId], references: [id], onDelete: Cascade)
 
   @@index([familyId])
 }

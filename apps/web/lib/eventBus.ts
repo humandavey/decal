@@ -3,7 +3,7 @@ import { EventEmitter } from "events";
 /** Resource kinds other browser tabs/devices care about — kept intentionally
  * small and coarse (not per-item) so a listener just refetches its list
  * rather than trying to patch a single record in place. */
-export type SyncEventType = "chores" | "todos" | "meals" | "family" | "calendar" | "groceries";
+export type SyncEventType = "chores" | "todos" | "meals" | "family" | "calendar" | "groceries" | "notes";
 
 // HMR-safe singleton, same pattern as packages/db/src/client.ts's Prisma
 // client — Next.js dev mode hot-reloads this module, which would otherwise

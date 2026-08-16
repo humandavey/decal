@@ -5,15 +5,17 @@ import { ChoresTab } from "./ChoresTab";
 import { MealsTab } from "./MealsTab";
 import { TodoTab } from "./TodoTab";
 import { GroceryTab } from "./GroceryTab";
+import { NotesTab } from "./NotesTab";
 import type { MemberOption } from "./MemberPicker";
 
-type Tab = "chores" | "meals" | "todo" | "groceries";
+type Tab = "chores" | "meals" | "todo" | "groceries" | "notes";
 
 const TABS: { id: Tab; label: string; accent: string }[] = [
   { id: "chores", label: "Chores", accent: "var(--accent-2)" },
   { id: "meals", label: "Meal plan", accent: "var(--accent-3)" },
   { id: "todo", label: "To-do", accent: "var(--accent-4)" },
-  { id: "groceries", label: "Groceries", accent: "var(--accent-1)" }
+  { id: "groceries", label: "Groceries", accent: "var(--accent-1)" },
+  { id: "notes", label: "Notes", accent: "var(--accent-5)" }
 ];
 
 interface FamilyPanelProps {
@@ -39,18 +41,20 @@ export function FamilyPanel({ members, familyVersion, onClose }: FamilyPanelProp
   return (
     <section style={styles.panel}>
       <div style={styles.tabRow}>
-        {TABS.map((t) => (
-          <button
-            key={t.id}
-            onClick={() => setTab(t.id)}
-            style={{
-              ...styles.tabButton,
-              ...(tab === t.id ? { color: t.accent, borderBottomColor: t.accent } : {})
-            }}
-          >
-            {t.label}
-          </button>
-        ))}
+        <div style={styles.tabScroll}>
+          {TABS.map((t) => (
+            <button
+              key={t.id}
+              onClick={() => setTab(t.id)}
+              style={{
+                ...styles.tabButton,
+                ...(tab === t.id ? { color: t.accent, borderBottomColor: t.accent } : {})
+              }}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
         <button type="button" onClick={onClose} style={styles.closeButton} aria-label="Hide panel">
           &times;
         </button>
@@ -60,6 +64,7 @@ export function FamilyPanel({ members, familyVersion, onClose }: FamilyPanelProp
         {tab === "meals" && <MealsTab members={members} familyVersion={familyVersion} />}
         {tab === "todo" && <TodoTab members={members} />}
         {tab === "groceries" && <GroceryTab />}
+        {tab === "notes" && <NotesTab />}
       </div>
     </section>
   );
@@ -79,24 +84,36 @@ const styles: Record<string, React.CSSProperties> = {
   tabRow: {
     display: "flex",
     alignItems: "center",
-    gap: 4,
     padding: "0 8px 0 16px",
     borderBottom: "1px solid var(--color-hairline)",
     flexShrink: 0
+  },
+  // Five tabs no longer reliably fit a narrow sidepanel at comfortable tap
+  // sizes — this scrolls horizontally instead of wrapping onto an awkward
+  // second line, while the close button (outside this div) always stays
+  // put on the right rather than scrolling out of reach with it.
+  tabScroll: {
+    display: "flex",
+    alignItems: "center",
+    gap: 2,
+    overflowX: "auto",
+    flex: 1,
+    minWidth: 0
   },
   tabButton: {
     background: "transparent",
     border: "none",
     borderBottom: "2px solid transparent",
-    padding: "16px 10px 14px",
-    fontSize: 14,
+    padding: "16px 9px 14px",
+    fontSize: 13.5,
     fontWeight: 600,
     color: "var(--color-muted)",
     cursor: "pointer",
-    minHeight: 48
+    minHeight: 48,
+    whiteSpace: "nowrap",
+    flexShrink: 0
   },
   closeButton: {
-    marginLeft: "auto",
     background: "transparent",
     border: "none",
     color: "var(--color-muted)",
