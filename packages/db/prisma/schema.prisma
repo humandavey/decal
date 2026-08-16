@@ -1,0 +1,296 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+// SQLite for local dev — zero setup, and it's plenty for a single-server
+// deployment (the Pi kiosk and mobile app both talk to this server over
+// HTTP, they never touch the DB file directly). If you deploy the web app
+// somewhere with multiple server instances, switch this to "postgresql"
+// and point DATABASE_URL at Postgres (Supabase/Neon/etc.) — the schema
+// below doesn't use anything SQLite-specific.
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ---------- Auth (NextAuth PrismaAdapter — field names/shapes are fixed) ----------
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime?
+  image         String?
+  createdAt     DateTime  @default(now())
+
+  accounts Account[]
+  sessions Session[]
+
+  memberships       FamilyMembership[]
+  choreAssignments  ChoreAssignment[]
+  choreCompletions  ChoreCompletion[]
+  todosCreated      TodoItem[]         @relation("TodoCreator")
+  todosAssigned     TodoItem[]         @relation("TodoAssignee")
+  mealPlansAssigned MealPlanEntry[]    @relation("MealAssignee")
+  hiddenEvents      HiddenEvent[]
+  groceryItemsAdded GroceryItem[]
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ---------- Family ----------
+
+// SQLite has no native enum support, so `role` below is a plain String
+// rather than a Prisma enum. Allowed values ("OWNER" | "MEMBER") are
+// enforced in packages/db/src/constants.ts instead of the schema.
+
+model Family {
+  id         String   @id @default(cuid())
+  name       String
+  inviteCode String   @unique @default(cuid())
+  // Which meal slots this family actually plans for — comma-separated
+  // subset of MEAL_TYPES (e.g. a family that only meal-preps dinner stores
+  // "DINNER"). Same no-native-array-on-SQLite pattern as Chore.recurrence.
+  // Owner-editable from family settings; the meal planner only shows slots
+  // listed here.
+  mealPrepTypes String   @default("BREAKFAST,LUNCH,DINNER,SNACK")
+  // Whether chore completion tracks points at all — some families just
+  // want a shared checklist, no scoring. Owner-editable from family
+  // settings; when on, the Family modal shows a per-member points total.
+  choresScoringEnabled Boolean  @default(true)
+  // Idle-triggered full-screen screensaver (rotating stock photos + clock +
+  // weather) — owner-editable from family settings.
+  screensaverEnabled      Boolean @default(true)
+  screensaverIdleMinutes  Int     @default(5)
+  // Where to pull weather for the screensaver overlay — set via a location
+  // search in family settings (Open-Meteo's free geocoding API), stored as
+  // plain lat/lon rather than a live-lookup city name so the screensaver
+  // never needs a network round-trip just to know where "home" is. Null
+  // until the owner sets one; the screensaver simply skips the weather
+  // overlay until then.
+  weatherLat   Float?
+  weatherLon   Float?
+  weatherLabel String?
+  createdAt  DateTime @default(now())
+
+  members      FamilyMembership[]
+  chores       Chore[]
+  mealPlans    MealPlanEntry[]
+  todoLists    TodoList[]
+  hiddenEvents HiddenEvent[]
+  groceryItems GroceryItem[]
+}
+
+// Join table: which users belong to which family, with a role and a
+// display color (used to tag chores/todos/events per-person in the UI).
+model FamilyMembership {
+  id       String   @id @default(cuid())
+  familyId String
+  userId   String
+  role     String   @default("MEMBER") // "OWNER" | "MEMBER"
+  color    String   @default("#F0633D")
+  joinedAt DateTime @default(now())
+
+  family Family @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([familyId, userId])
+}
+
+// ---------- Chores ----------
+
+model Chore {
+  id          String    @id @default(cuid())
+  familyId    String
+  title       String
+  description String?
+  points      Int       @default(0)
+  // Simple recurrence rule for now: "DAILY" | "WEEKLY" | "MON,WED,FRI" | null (one-off)
+  recurrence  String?
+  // Mainly meaningful for one-off (non-recurring) chores — when it should
+  // be done by. Recurring chores are tracked via ChoreCompletion instead.
+  dueDate     DateTime?
+  // Rotation: instead of every assignee being on the hook every time, the
+  // chore passes between assignments[] in order, one person "on duty" per
+  // occurrence. Only meaningful with 2+ assignments — the UI hides the
+  // toggle otherwise. There's no scheduled job to advance this on its own
+  // (this app has no background cron); it steps forward the moment the
+  // chore is marked complete, onto whoever's up for the *next* occurrence.
+  rotationEnabled Boolean @default(false)
+  rotationIndex   Int     @default(0)
+  createdAt   DateTime  @default(now())
+  archivedAt  DateTime?
+
+  family      Family            @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  assignments ChoreAssignment[]
+  completions ChoreCompletion[]
+}
+
+// Who is generally responsible for a chore (a chore can have 0+ assignees;
+// unassigned chores show up as available to anyone). `order` is the
+// rotation sequence (set from the assignee picker's order at creation
+// time) — rotationIndex % count picks whose turn it is.
+model ChoreAssignment {
+  id      String @id @default(cuid())
+  choreId String
+  userId  String
+  order   Int    @default(0)
+
+  chore Chore @relation(fields: [choreId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([choreId, userId])
+}
+
+// A single completion of a recurring (or one-off) chore on a given day.
+// `forDate` is date-only (stored at midnight UTC) so recurring chores can't
+// be double-completed on the same day.
+model ChoreCompletion {
+  id          String   @id @default(cuid())
+  choreId     String
+  userId      String
+  forDate     DateTime
+  completedAt DateTime @default(now())
+
+  chore Chore @relation(fields: [choreId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([choreId, forDate])
+}
+
+// ---------- Meal planning ----------
+// SQLite has no native enum support, so `mealType` below is a plain String.
+// Allowed values ("BREAKFAST" | "LUNCH" | "DINNER" | "SNACK") are enforced
+// in packages/db/src/constants.ts and in the API route that writes it.
+
+model MealPlanEntry {
+  id         String   @id @default(cuid())
+  familyId   String
+  date       DateTime // date-only, stored at midnight UTC
+  mealType   String
+  title      String
+  notes      String?
+  // Who's cooking / bringing this dish — optional, purely informational.
+  assigneeId String?
+  createdAt  DateTime @default(now())
+
+  family   Family @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  assignee User?  @relation("MealAssignee", fields: [assigneeId], references: [id])
+
+  @@unique([familyId, date, mealType])
+}
+
+// ---------- To-do list ----------
+// One family can have multiple named lists ("Groceries", "Weekend projects"),
+// but we auto-create a default "Family To-Do" list for every new family.
+
+model TodoList {
+  id        String   @id @default(cuid())
+  familyId  String
+  name      String   @default("Family To-Do")
+  createdAt DateTime @default(now())
+
+  family Family     @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  items  TodoItem[]
+}
+
+model TodoItem {
+  id          String    @id @default(cuid())
+  listId      String
+  title       String
+  done        Boolean   @default(false)
+  dueDate     DateTime?
+  createdById String
+  assigneeId  String?
+  createdAt   DateTime  @default(now())
+  completedAt DateTime?
+
+  list      TodoList @relation(fields: [listId], references: [id], onDelete: Cascade)
+  createdBy User     @relation("TodoCreator", fields: [createdById], references: [id])
+  assignee  User?    @relation("TodoAssignee", fields: [assigneeId], references: [id])
+}
+
+// ---------- Hidden calendar events ----------
+// A family member choosing to "delete" an event from Decal never touches
+// the underlying Google Calendar event — it just records that this member
+// doesn't want to see it on the shared dashboard anymore. Only the member
+// who owns the event (ownerId) can hide/unhide it; the events feed route
+// filters anything matching one of these rows out of that owner's events
+// before merging the family's combined calendar.
+model HiddenEvent {
+  id         String   @id @default(cuid())
+  familyId   String
+  ownerId    String
+  // Google's own identifiers for the event — what actually gets matched
+  // against the live feed to filter it out.
+  calendarId String
+  eventId    String
+  // A snapshot taken at hide time, so the "hidden events" list in Profile
+  // has something to show without another round-trip to Google (and still
+  // shows something sane if the event is later edited or removed there).
+  title      String
+  start      DateTime
+  allDay     Boolean  @default(false)
+  hiddenAt   DateTime @default(now())
+
+  family Family @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  owner  User   @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  @@unique([ownerId, calendarId, eventId])
+  @@index([familyId])
+}
+
+// ---------- Grocery list ----------
+// Deliberately just one flat, shared list per family (unlike TodoList,
+// which supports several named lists) — a household grocery list doesn't
+// usually need to be split up, and keeping it to one list keeps the tab
+// dead simple. Checked items stay in place (struck through) until someone
+// taps "Clear checked", typically after a shopping trip.
+model GroceryItem {
+  id        String    @id @default(cuid())
+  familyId  String
+  title     String
+  checked   Boolean   @default(false)
+  addedById String
+  createdAt DateTime  @default(now())
+  checkedAt DateTime?
+
+  family  Family @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  addedBy User   @relation(fields: [addedById], references: [id], onDelete: Cascade)
+
+  @@index([familyId])
+}

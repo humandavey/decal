@@ -1,0 +1,200 @@
+:root {
+  --color-ink: #1c1f26;
+  --color-ink-deep: #14171d;
+  --color-panel: #262b34;
+  --color-panel-raised: #2e3440;
+  --color-paper: #ede9e1;
+  --color-muted: #8a8f9c;
+  --color-hairline: rgba(237, 233, 225, 0.08);
+  --color-hairline-strong: rgba(237, 233, 225, 0.16);
+
+  --accent-1: #f0633d; /* coral */
+  --accent-2: #34a896; /* teal */
+  --accent-3: #e7a93b; /* gold */
+  --accent-4: #6e7bf2; /* periwinkle */
+  --accent-5: #d46fb0; /* orchid */
+
+  --font-display: var(--font-display);
+  --font-body: var(--font-body);
+  --font-mono: var(--font-mono);
+
+  --radius-card: 18px;
+  --radius-tag: 10px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  padding: 0;
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  background: var(--color-ink-deep);
+  color: var(--color-paper);
+  font-family: var(--font-body), system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: inherit;
+}
+
+button {
+  font-family: inherit;
+  /* This app is built for a touchscreen kiosk first — kill the 300ms tap
+     delay and the flash-on-tap highlight browsers add by default. */
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+input,
+select,
+textarea {
+  touch-action: manipulation;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent-4);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Calendar (left) + Chores/Meals/To-do sidebar (right). Stacks vertically
+   on narrow screens/windows instead of squeezing the sidebar unusably
+   thin. */
+.decal-shell {
+  display: flex;
+  align-items: stretch;
+  gap: 24px;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  /* The gap itself is animated (inline style toggles it to 0 when the side
+     panel collapses) so the calendar smoothly reclaims the space instead
+     of jumping. */
+  transition: gap 0.22s ease;
+}
+
+/* The page itself is pinned to one viewport (see CalendarBoard's `page`
+   style), so on a kiosk touchscreen nothing ever needs a page-level swipe.
+   Within it, the header/filters/banners stay put and only the calendar
+   grid (.decal-calendar-scroll) scrolls — see below. */
+.decal-main {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.decal-calendar-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  /* Today's highlighted day (week view lifts it with a small negative
+     translateY + shadow) needs a little headroom, or its own scroll
+     container clips the top of that highlight off. */
+  padding: 10px 2px 2px;
+  margin: -10px -2px 0;
+}
+
+/* The right-hand column — FamilyPanel (Chores/Meals/To-do) stacked above
+   QuickAddPanel (paste-to-add-event). Both are separate cards; this is
+   just the flex column that holds them and the single show/hide + width
+   transition that applies to the pair together. */
+.decal-sidepanel {
+  width: 420px;
+  flex-shrink: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  transition: width 0.25s ease, opacity 0.2s ease;
+}
+
+/* The pair stays mounted (so FamilyPanel's tabs keep their loaded data,
+   and Quick Add keeps whatever's mid-flow) and is collapsed visually
+   instead of removed from the DOM — see the `showSidePanel` state in
+   CalendarBoard. */
+.decal-sidepanel-hidden {
+  width: 0;
+  opacity: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+/* A small motion cue when the visible calendar window changes (switching
+   views, stepping a day/week/month) instead of new content just snapping
+   into place. */
+@keyframes decal-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.decal-fade-in {
+  animation: decal-fade-in 0.18s ease;
+}
+
+/* A slower, more deliberate entrance for the full-screen screensaver
+   overlay — a gentle fade + settle rather than the snappier 0.18s used
+   for everyday view changes, since this one covers the whole screen. */
+@keyframes decal-screensaver-in {
+  from {
+    opacity: 0;
+    transform: scale(1.03);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.decal-screensaver-in {
+  animation: decal-screensaver-in 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@media (max-width: 880px) {
+  .decal-shell {
+    flex-direction: column;
+    overflow-y: auto;
+  }
+
+  .decal-main {
+    flex: none;
+  }
+
+  .decal-calendar-scroll {
+    flex: none;
+    overflow-y: visible;
+  }
+
+  .decal-sidepanel {
+    width: 100%;
+    max-height: 60vh;
+    transition: max-height 0.25s ease, opacity 0.2s ease;
+  }
+
+  /* Stacked layout collapses vertically instead of horizontally. */
+  .decal-sidepanel-hidden {
+    width: 100%;
+    max-height: 0;
+  }
+}
