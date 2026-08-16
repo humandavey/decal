@@ -6,8 +6,10 @@ A thin native wrapper (via [Capacitor](https://capacitorjs.com)) around the same
 
 Decal is self-hosted, so unlike a normal app there's no single fixed backend URL to bake in — but it does get baked in, at **build time**, per family:
 
-1. Before running any `cap` command, copy `.env.example` to `.env` in this folder and set `DECAL_SERVER_URL` to your server's address (the same one you'd type into a browser at home).
-2. `capacitor.config.ts` reads that and sets it as `server.url` — Capacitor then loads your server as the WebView's actual home page at launch, instead of a packaged local page.
+1. Before running any `cap` command, copy `.env.example` to `.env` in this folder and set `DECAL_SERVER_URL` to your server's address (the same one you'd type into a browser at home) — no trailing slash, no path, just e.g. `https://decal.yourdomain.com`.
+2. `capacitor.config.ts` reads that and sets `server.url` to `<DECAL_SERVER_URL>/m` — Capacitor then loads that exact page as the WebView's home page at launch, instead of a packaged local page.
+
+The `/m` matters: `server.url` is the *exact* starting page, not just an origin. Without it the app loads `/` — the desktop kiosk dashboard's side-by-side layout — instead of the mobile-optimized bottom-tab routes under `apps/web/app/m/`. This is invisible before signing in (both show the same sign-in screen when logged out), which is exactly why it can go unnoticed until after sign-in is actually working.
 
 This makes the WebView's home *origin* your own server, so ordinary navigation within it (following a link, NextAuth's own sign-in redirects, etc.) is same-origin and stays in the app. If you ever change `DECAL_SERVER_URL`, run `npx cap sync` and rebuild.
 
@@ -15,7 +17,9 @@ An earlier version of this asked for the server address at runtime, on a bootstr
 
 ### Signing in with Google
 
-Google refuses to complete OAuth from an embedded WebView at all (it returns a `disallowed_useragent` error) — that's enforced on Google's end, not something any Capacitor setting works around. So "Connect Google Calendar" behaves differently here than in a normal browser tab: on native, it opens NextAuth's sign-in page in a real system browser component (`SFSafariViewController` on iOS, Chrome Custom Tabs on Android, via the `@capacitor/browser` plugin) instead of the in-app WebView. That's a Google-sanctioned browser context, so sign-in completes normally there.
+Google refuses to complete OAuth from an embedded WebView at all (it returns a `disallowed_useragent` error) — that's enforced on Google's end, not something any Capacitor setting works around. So "Connect Google Calendar" behaves differently here than in a normal browser tab: tapping it on native opens a system browser sheet (`SFSafariViewController` on iOS, Chrome Custom Tabs on Android, via the `@capacitor/browser` plugin) pointed at `/native-signin` — a small dedicated page (`apps/web/app/native-signin/page.tsx`) whose only job is to immediately kick off Google's sign-in the instant the sheet finishes loading. There's no second tap needed inside the sheet; you land straight on Google's own login. That's a Google-sanctioned browser context, so sign-in completes normally there.
+
+(`/native-signin` exists as its own route rather than just opening `/` because `signIn()` without an explicit `callbackUrl` defaults to the *current page's* URL — a query string tacked onto some other page's URL doesn't actually redirect it anywhere useful. `/native-signin` is the one place that pins down exactly where NextAuth sends you next.)
 
 On iOS specifically, that browser's cookies are **not** shared with this app's own WKWebView — `SFSafariViewController` shares cookies with Safari.app device-wide, not with the private WebView of whichever app opened it. So instead of the session cookie just showing up back in the app, NextAuth's callback hands off a short-lived, single-use token through this app's own `decal://` URL scheme, which the app picks up and redeems with a normal same-origin request (see the comments in `apps/web/components/SignInGate.tsx` and `apps/web/app/api/auth/mobile-handoff/` for the full mechanism). **This needs one manual step after `cap add ios`** — register the URL scheme, or iOS has nowhere to hand that redirect off to:
 
