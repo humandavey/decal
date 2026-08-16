@@ -33,5 +33,6 @@ export const MEMBER_COLOR_PALETTE = [
   "#7FB069", // sage
   "#4A9CC7", // steel blue
   "#9B6FD9", // violet
-  "#D9587A" // rose
+  "#D9587A", // rose
+  "#E5484D" // red
 ] as const;

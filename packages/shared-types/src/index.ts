@@ -82,7 +82,8 @@ export const FAMILY_PALETTE = [
   "#7FB069",
   "#4A9CC7",
   "#9B6FD9",
-  "#D9587A"
+  "#D9587A",
+  "#E5484D"
 ] as const;
 
 export function colorForMemberIndex(index: number): string {
