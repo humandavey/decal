@@ -76,7 +76,9 @@ export function MobileShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
 
   return (
-    <div style={styles.shell}>
+    // decal-mobile: scopes the iOS input-zoom fix in globals.css to just
+    // this route tree — see the comment there for why it's not global.
+    <div className="decal-mobile" style={styles.shell}>
       <div style={styles.content}>{children}</div>
       <nav style={styles.tabBar}>
         {TABS.map((tab) => {

@@ -9,6 +9,7 @@ import { contributorNames } from "@/lib/calendarDisplay";
 import { useSession } from "next-auth/react";
 import { EventDetailModal } from "../EventDetailModal";
 import type { FamilyNote } from "../NotesTab";
+import { getCached, setCached } from "@/lib/mobileCache";
 
 const TIME = new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit" });
 const DAY_LABEL = new Intl.DateTimeFormat("en-US", { weekday: "long", month: "long", day: "numeric" });
@@ -34,39 +35,70 @@ const MEAL_LABEL: Record<string, string> = {
 export function MobileToday() {
   const { data: session } = useSession();
   const today = useMemo(() => startOfDay(new Date()), []);
-  const [events, setEvents] = useState<CalendarEvent[] | null>(null);
-  const [meals, setMeals] = useState<MealEntry[] | null>(null);
-  const [choresRemaining, setChoresRemaining] = useState<number | null>(null);
-  const [notes, setNotes] = useState<FamilyNote[] | null>(null);
+  // Seeded from mobileCache instead of null, so a return visit to this tab
+  // within the same app session shows what was here a moment ago instantly
+  // instead of flashing "Loading…" again while the fetches below re-run in
+  // the background — see lib/mobileCache.ts.
+  const [events, setEvents] = useState<CalendarEvent[] | null>(() => getCached("today:events") ?? null);
+  const [meals, setMeals] = useState<MealEntry[] | null>(() => getCached("today:meals") ?? null);
+  const [choresRemaining, setChoresRemaining] = useState<number | null>(
+    () => getCached("today:choresRemaining") ?? null
+  );
+  const [notes, setNotes] = useState<FamilyNote[] | null>(() => getCached("today:notes") ?? null);
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
 
   useEffect(() => {
     const start = today;
     const end = addDays(today, 1);
-    const params = new URLSearchParams({ start: start.toISOString(), end: end.toISOString() });
+    const eventParams = new URLSearchParams({ start: start.toISOString(), end: end.toISOString() });
 
-    fetch(`/api/calendar/events?${params}`)
+    fetch(`/api/calendar/events?${eventParams}`)
       .then((res) => (res.ok ? res.json() : null))
-      .then((data) => setEvents(data?.events ?? []))
-      .catch(() => setEvents([]));
+      .then((data) => {
+        const result = data?.events ?? [];
+        setCached("today:events", result);
+        setEvents(result);
+      })
+      .catch(() => setEvents((prev) => prev ?? []));
 
-    fetch(`/api/meals?${params}`)
+    // /api/meals's start/end are an inclusive day range (matching
+    // MealsTab's week view, which passes the first and last day of the
+    // week it's showing — both included), unlike /api/calendar/events's
+    // start/end above, which are exact timestamps with an exclusive end
+    // (Google Calendar's own timeMin/timeMax convention). Reusing
+    // eventParams' end of "tomorrow" here — meant as an exclusive
+    // boundary for events — instead pulled in the whole of tomorrow's
+    // meals too, since for meals it's an inclusive day. That's the "Meals
+    // today" card showing more than one day's worth of meals. A same-day
+    // range fixes it.
+    const mealParams = new URLSearchParams({ start: start.toISOString(), end: start.toISOString() });
+    fetch(`/api/meals?${mealParams}`)
       .then((res) => (res.ok ? res.json() : null))
-      .then((data) => setMeals(data?.entries ?? []))
-      .catch(() => setMeals([]));
+      .then((data) => {
+        const result = data?.entries ?? [];
+        setCached("today:meals", result);
+        setMeals(result);
+      })
+      .catch(() => setMeals((prev) => prev ?? []));
 
     fetch("/api/chores")
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
         const chores = (data?.chores ?? []) as { completedToday: boolean }[];
-        setChoresRemaining(chores.filter((c) => !c.completedToday).length);
+        const remaining = chores.filter((c) => !c.completedToday).length;
+        setCached("today:choresRemaining", remaining);
+        setChoresRemaining(remaining);
       })
-      .catch(() => setChoresRemaining(null));
+      .catch(() => {});
 
     fetch("/api/notes")
       .then((res) => (res.ok ? res.json() : null))
-      .then((data) => setNotes((data?.notes ?? []).slice(0, 3)))
-      .catch(() => setNotes([]));
+      .then((data) => {
+        const result = (data?.notes ?? []).slice(0, 3);
+        setCached("today:notes", result);
+        setNotes(result);
+      })
+      .catch(() => setNotes((prev) => prev ?? []));
   }, [today]);
 
   const dedupedEvents = useMemo(
@@ -178,7 +210,11 @@ export function MobileToday() {
             const params = new URLSearchParams({ start: start.toISOString(), end: end.toISOString() });
             fetch(`/api/calendar/events?${params}`)
               .then((res) => (res.ok ? res.json() : null))
-              .then((data) => setEvents(data?.events ?? []))
+              .then((data) => {
+                const result = data?.events ?? [];
+                setCached("today:events", result);
+                setEvents(result);
+              })
               .catch(() => setEvents([]));
           }}
         />

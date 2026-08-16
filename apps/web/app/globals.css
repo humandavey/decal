@@ -68,6 +68,24 @@ textarea {
   touch-action: manipulation;
 }
 
+/* iOS Safari/WKWebView zooms the whole page in when a focused text input's
+   effective font-size is under 16px — there's no setting to opt out of
+   this, the only fix is not having one under 16px in the first place. The
+   kiosk/desktop views use 13.5–14px inputs throughout (ChoresTab, MealsTab,
+   FamilyTab, QuickAddPanel, etc.) which is fine with a mouse, but those
+   same components get reused as-is inside the mobile app (see
+   MobileFamilyTabs) — hence this being scoped to .decal-mobile (the class
+   MobileShell puts on its root) rather than changed globally, which would
+   have thrown off the kiosk's tighter desktop layout for no benefit there.
+   This is also why "zoomed in and couldn't undo it" specifically followed
+   tapping into a field to add something: focus is what triggers the zoom,
+   and iOS doesn't reliably zoom back out on blur on its own. */
+.decal-mobile input,
+.decal-mobile select,
+.decal-mobile textarea {
+  font-size: 16px !important;
+}
+
 :focus-visible {
   outline: 2px solid var(--accent-4);
   outline-offset: 2px;

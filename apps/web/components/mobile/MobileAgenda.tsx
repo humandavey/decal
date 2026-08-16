@@ -6,9 +6,13 @@ import type { CalendarEvent } from "@decal/shared-types";
 import { addDays, isSameDay, parseEventDate, startOfDay } from "@/lib/dates";
 import { dedupeCalendarEvents } from "@/lib/eventDedupe";
 import { contributorNames } from "@/lib/calendarDisplay";
+import { useFamilySyncListener } from "@/lib/useFamilySync";
 import { EventDetailModal } from "../EventDetailModal";
+import { QuickAddPanel } from "../QuickAddPanel";
+import { getCached, setCached } from "@/lib/mobileCache";
 
 const AGENDA_DAYS = 21;
+const CACHE_KEY = "agenda:events";
 const DAY_LABEL = new Intl.DateTimeFormat("en-US", { weekday: "short", month: "short", day: "numeric" });
 const TIME = new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit" });
 
@@ -20,8 +24,12 @@ const TIME = new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digi
 export function MobileAgenda() {
   const { data: session } = useSession();
   const today = useMemo(() => startOfDay(new Date()), []);
-  const [events, setEvents] = useState<CalendarEvent[] | null>(null);
+  // Seeded from mobileCache so switching back to the Calendar tab shows the
+  // last-loaded agenda instantly instead of blanking to "Loading…" while a
+  // fresh copy re-fetches in the background — see lib/mobileCache.ts.
+  const [events, setEvents] = useState<CalendarEvent[] | null>(() => getCached(CACHE_KEY) ?? null);
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
+  const [showQuickAdd, setShowQuickAdd] = useState(false);
 
   function load() {
     const start = today;
@@ -29,11 +37,21 @@ export function MobileAgenda() {
     const params = new URLSearchParams({ start: start.toISOString(), end: end.toISOString() });
     fetch(`/api/calendar/events?${params}`)
       .then((res) => (res.ok ? res.json() : null))
-      .then((data) => setEvents(data?.events ?? []))
-      .catch(() => setEvents([]));
+      .then((data) => {
+        const result = data?.events ?? [];
+        setCached(CACHE_KEY, result);
+        setEvents(result);
+      })
+      .catch(() => setEvents((prev) => prev ?? []));
   }
 
   useEffect(load, [today]);
+
+  // Quick Add (below) doesn't call load() itself after creating an event —
+  // it fires the same "calendar" sync event editing/hiding an event does
+  // (see QuickAddPanel's own comment), and this is what picks that up,
+  // same as the desktop CalendarBoard.
+  useFamilySyncListener(["calendar"], load);
 
   const days = useMemo(() => Array.from({ length: AGENDA_DAYS }, (_, i) => addDays(today, i)), [today]);
 
@@ -61,9 +79,19 @@ export function MobileAgenda() {
 
   return (
     <div style={styles.wrap}>
-      <div>
-        <p style={styles.eyebrow}>Calendar</p>
-        <h1 style={styles.heading}>Next {AGENDA_DAYS} days</h1>
+      <div style={styles.headerRow}>
+        <div>
+          <p style={styles.eyebrow}>Calendar</p>
+          <h1 style={styles.heading}>Next {AGENDA_DAYS} days</h1>
+        </div>
+        <button
+          type="button"
+          style={styles.addButton}
+          onClick={() => setShowQuickAdd(true)}
+          aria-label="Add event"
+        >
+          +
+        </button>
       </div>
 
       {eventsByDay === null ? (
@@ -111,12 +139,84 @@ export function MobileAgenda() {
       {selectedEvent && (
         <EventDetailModal event={selectedEvent} onClose={() => setSelectedEvent(null)} onChanged={load} />
       )}
+
+      {showQuickAdd && (
+        <div style={styles.quickAddOverlay} onClick={() => setShowQuickAdd(false)}>
+          <div style={styles.quickAddSheet} onClick={(e) => e.stopPropagation()}>
+            <button
+              type="button"
+              style={styles.quickAddClose}
+              onClick={() => setShowQuickAdd(false)}
+              aria-label="Close"
+            >
+              &times;
+            </button>
+            {/* Same component the desktop sidebar uses — self-contained,
+                already handles its own parse/preview/create flow and fires
+                the "calendar" sync event on success, which the
+                useFamilySyncListener above picks up. */}
+            <QuickAddPanel />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
 const styles: Record<string, React.CSSProperties> = {
   wrap: { display: "flex", flexDirection: "column", gap: 16 },
+  headerRow: { display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 },
+  addButton: {
+    flexShrink: 0,
+    width: 40,
+    height: 40,
+    borderRadius: "50%",
+    border: "none",
+    background: "var(--accent-1)",
+    color: "var(--color-ink-deep)",
+    fontSize: 22,
+    lineHeight: 1,
+    fontWeight: 600,
+    cursor: "pointer",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    // Nudges the "+" glyph visually centered — most fonts render it
+    // slightly above true center at this size.
+    paddingBottom: 2
+  },
+  quickAddOverlay: {
+    position: "fixed",
+    inset: 0,
+    background: "rgba(10, 11, 14, 0.6)",
+    backdropFilter: "blur(2px)",
+    display: "flex",
+    alignItems: "flex-end",
+    zIndex: 50
+  },
+  quickAddSheet: {
+    position: "relative",
+    width: "100%",
+    maxHeight: "85vh",
+    overflowY: "auto",
+    background: "var(--color-ink-deep)",
+    borderTopLeftRadius: "var(--radius-card)",
+    borderTopRightRadius: "var(--radius-card)",
+    padding: "20px 16px calc(env(safe-area-inset-bottom, 0px) + 20px)"
+  },
+  quickAddClose: {
+    position: "absolute",
+    top: 12,
+    right: 12,
+    background: "transparent",
+    border: "none",
+    color: "var(--color-muted)",
+    fontSize: 24,
+    lineHeight: 1,
+    cursor: "pointer",
+    padding: 6,
+    zIndex: 1
+  },
   eyebrow: {
     fontFamily: "var(--font-mono)",
     fontSize: 11,
