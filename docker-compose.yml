@@ -1,0 +1,27 @@
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      # Lives only on this server — never committed, never touched by CI.
+      # See .env.example for the full list of variables it needs.
+      - .env
+    environment:
+      # Overrides whatever's in .env: the sqlite file must live on the
+      # decal-data volume below (anything outside a volume is wiped every
+      # time this image gets rebuilt on deploy).
+      DATABASE_URL: file:/data/decal.db
+      TZ: ${TZ:-America/New_York}
+    volumes:
+      - decal-data:/data
+    ports:
+      # Bound to loopback only — the host's own nginx (already running,
+      # fronting Pterodactyl on 80/443) reverse-proxies to this, so
+      # nothing outside the box needs to reach it directly. See
+      # deploy/decal.nginx.conf and DEPLOY.md.
+      - "127.0.0.1:3000:3000"
+
+volumes:
+  decal-data:

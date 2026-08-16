@@ -8,13 +8,14 @@
     "generate": "prisma generate",
     "migrate:dev": "prisma migrate dev",
     "migrate:deploy": "prisma migrate deploy",
-    "studio": "prisma studio"
+    "studio": "prisma studio",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@prisma/client": "^5.19.1"
+    "@prisma/client": "5.22.0"
   },
   "devDependencies": {
     "@types/node": "^20.14.0",
-    "prisma": "^5.19.1"
+    "prisma": "5.22.0"
   }
 }

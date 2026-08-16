@@ -1,0 +1,28 @@
+# Reinstalled fresh in the deps stage from pnpm-lock.yaml — never copy
+# host node_modules into the build context (wrong platform's native
+# bindings, e.g. Prisma's engine, plus it's huge).
+node_modules
+**/node_modules
+
+# Build output — regenerated inside the image every time.
+.next
+**/.next
+**/dist
+
+# The Capacitor native app isn't part of this image at all (see the
+# Dockerfile's top comment) — its generated native projects are large and
+# irrelevant here.
+apps/mobile/ios
+apps/mobile/android
+apps/mobile/.env
+
+.git
+.turbo
+*.log
+
+# Never bake real secrets or a real db file into an image layer.
+.env
+.env.*
+!.env.example
+*.db
+*.db-journal

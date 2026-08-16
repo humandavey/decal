@@ -1,0 +1,89 @@
+name: CI & Deploy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A new push cancels whatever CI run was already going for the same
+# branch/PR, so a quick series of pushes doesn't queue up stale runs.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    name: Lint, typecheck, build
+    # Always GitHub-hosted, never the self-hosted runner below. This job
+    # also runs on pull_request — including PRs from forks — and letting
+    # arbitrary PR code execute on the self-hosted runner would mean
+    # anyone who opens a PR gets to run code on the home server. Only
+    # `deploy` (gated to pushes on main, which requires write access)
+    # touches it.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.7.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm --filter @decal/db generate
+
+      - name: Lint
+        run: pnpm turbo run lint
+
+      - name: Typecheck
+        run: pnpm turbo run typecheck
+
+      - name: Build
+        run: pnpm --filter @decal/web build
+        env:
+          # Never a real connection — see the matching comment in
+          # Dockerfile. next build only needs the client to construct.
+          DATABASE_URL: file:./ci-placeholder.db
+
+  deploy:
+    name: Deploy to home server
+    needs: ci
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: [self-hosted, decal-server]
+    timeout-minutes: 20
+    concurrency:
+      # Belt-and-suspenders alongside the workflow-level concurrency group
+      # above: never let two deploys race on the one server regardless of
+      # what triggered them.
+      group: decal-deploy
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # This runner IS the server — its job workspace is a persistent
+          # directory on disk, not a throwaway VM. actions/checkout's
+          # default pre-checkout `git clean -ffdx` would delete the .env
+          # file that lives there (see DEPLOY.md) on every single run.
+          # clean: false keeps it — and Docker's build cache, and anything
+          # else untracked left sitting in the workspace — in place.
+          clean: false
+
+      - name: Build image and restart
+        run: docker compose up -d --build
+
+      - name: Drop old, now-unreferenced images
+        # Keeps the disk from slowly filling with a superseded image every
+        # deploy. -f skips the "are you sure" prompt; this only ever
+        # touches dangling (untagged) images, never the one currently
+        # running.
+        run: docker image prune -f
