@@ -14,9 +14,19 @@
   --accent-4: #6e7bf2; /* periwinkle */
   --accent-5: #d46fb0; /* orchid */
 
-  --font-display: var(--font-display);
-  --font-body: var(--font-body);
-  --font-mono: var(--font-mono);
+  /* Self-hosted via @fontsource (imported in app/layout.tsx) instead of
+     next/font/google — that fetches these families from Google's CDN at
+     build time, and any network hiccup reaching fonts.googleapis.com /
+     fonts.gstatic.com (a corporate/school network, an ad- or
+     privacy-DNS blocker like Pi-hole/NextDNS that blocks Google Fonts,
+     or just a bad connection at the moment `next dev` first compiles)
+     makes it silently fall back to the browser's default system font —
+     everywhere at once, which is exactly what "the font is messed up"
+     looks like. @fontsource ships the actual font files as part of the
+     npm package, so there's nothing to fetch at runtime or build time. */
+  --font-display: "Fraunces", Georgia, serif;
+  --font-body: "Inter", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", monospace;
 
   --radius-card: 18px;
   --radius-tag: 10px;

@@ -40,7 +40,7 @@
         margin: 0 0 8px;
       }
       h1 {
-        font-size: 26px;
+        font-size: 22px;
         font-weight: 600;
         margin: 0 0 12px;
       }
@@ -48,121 +48,43 @@
         color: #8a8f9c;
         font-size: 14px;
         line-height: 1.6;
-        margin: 0 0 24px;
+        margin: 0 0 4px;
       }
-      input {
-        width: 100%;
+      code {
+        display: block;
+        margin-top: 16px;
         background: #1c1f26;
         border: 1px solid rgba(237, 233, 225, 0.16);
         border-radius: 10px;
-        padding: 14px 14px;
-        color: #ede9e1;
-        font-size: 15px;
-        margin-bottom: 12px;
-      }
-      button {
-        width: 100%;
-        background: #f0633d;
-        color: #14171d;
-        border: none;
-        border-radius: 999px;
-        padding: 14px 20px;
-        font-size: 15px;
-        font-weight: 600;
-        cursor: pointer;
-      }
-      button:disabled {
-        opacity: 0.6;
-      }
-      .error {
-        color: #f0633d;
+        padding: 12px 14px;
         font-size: 13px;
-        margin: 12px 0 0;
-        display: none;
-      }
-      .loading {
-        display: none;
-      }
-      .loading p {
-        color: #8a8f9c;
-        font-size: 14px;
+        text-align: left;
+        word-break: break-all;
       }
     </style>
   </head>
   <body>
-    <div class="card" id="form-card">
+    <!--
+      This page only ever shows up if the app was built without
+      DECAL_SERVER_URL set (see apps/mobile/.env.example). In a normal
+      build, capacitor.config.ts sets `server.url` to your Decal server, so
+      Capacitor loads that origin directly at launch instead of this file —
+      there is nothing to click through or connect here at runtime anymore.
+
+      (An earlier version of this app asked for the server address on this
+      screen and navigated to it from here. That doesn't work: Capacitor
+      treats a navigation to a different origin than the app's configured
+      one as "external" and hands it to Safari/Chrome instead of loading it
+      in the WebView — which is exactly the "opens Safari, then gets stuck
+      on Connecting" bug this build-time approach fixes.)
+    -->
+    <div class="card">
       <p class="eyebrow">Decal</p>
-      <h1>Connect to your family's server</h1>
+      <h1>Server address not set</h1>
       <p class="copy">
-        Enter the address of your self-hosted Decal server — the same one you'd type into a
-        browser at home. You can find it in the desktop dashboard, or ask whoever set it up.
+        This build wasn't given a server to point at. On the machine you build this app from:
       </p>
-      <input
-        id="server-url"
-        type="url"
-        inputmode="url"
-        autocapitalize="off"
-        autocorrect="off"
-        placeholder="https://decal.yourhouse.com"
-      />
-      <button id="connect-button" type="button">Connect</button>
-      <p class="error" id="error-text"></p>
+      <code>cd apps/mobile<br />cp .env.example .env&nbsp;&nbsp;# then edit DECAL_SERVER_URL<br />npx cap sync<br /># rebuild in Xcode / Android Studio</code>
     </div>
-    <div class="card loading" id="loading-card">
-      <p class="eyebrow">Decal</p>
-      <p>Connecting&hellip;</p>
-    </div>
-
-    <script>
-      // Capacitor auto-injects `window.Capacitor` (and every registered
-      // plugin under `Capacitor.Plugins`) into this WebView at runtime —
-      // no npm install/bundler needed for this bootstrap page specifically,
-      // it's plain static HTML shipped as the app's local webDir.
-      var Preferences = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Preferences;
-      var PREF_KEY = "decal_server_url";
-
-      function normalizeUrl(raw) {
-        var value = raw.trim().replace(/\/+$/, "");
-        if (!/^https?:\/\//i.test(value)) value = "https://" + value;
-        return value;
-      }
-
-      function goToServer(url) {
-        document.getElementById("form-card").style.display = "none";
-        document.getElementById("loading-card").style.display = "block";
-        // The mobile-optimized route (bottom-tab shell), not "/" — that's
-        // the kiosk dashboard's side-by-side desktop layout.
-        window.location.href = url + "/m";
-      }
-
-      async function tryStoredUrl() {
-        if (!Preferences) return; // running in a plain desktop browser preview, not the native app
-        var result = await Preferences.get({ key: PREF_KEY });
-        if (result && result.value) goToServer(result.value);
-      }
-
-      async function connect() {
-        var input = document.getElementById("server-url");
-        var errorEl = document.getElementById("error-text");
-        errorEl.style.display = "none";
-        var url = normalizeUrl(input.value);
-        if (!input.value.trim()) {
-          errorEl.textContent = "Enter your server's address first.";
-          errorEl.style.display = "block";
-          return;
-        }
-        if (Preferences) {
-          await Preferences.set({ key: PREF_KEY, value: url });
-        }
-        goToServer(url);
-      }
-
-      document.getElementById("connect-button").addEventListener("click", connect);
-      document.getElementById("server-url").addEventListener("keydown", function (e) {
-        if (e.key === "Enter") connect();
-      });
-
-      tryStoredUrl();
-    </script>
   </body>
 </html>

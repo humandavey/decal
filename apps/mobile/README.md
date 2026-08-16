@@ -4,13 +4,18 @@ A thin native wrapper (via [Capacitor](https://capacitorjs.com)) around the same
 
 ## How it connects to your server
 
-Decal is self-hosted, so unlike a normal app there's no single fixed backend URL to bake in at build time. Instead:
+Decal is self-hosted, so unlike a normal app there's no single fixed backend URL to bake in — but it does get baked in, at **build time**, per family:
 
-1. The app launches into a small local bootstrap screen (`www/index.html`) asking for your server's address — the same URL you'd type into a browser at home.
-2. That address is saved with `@capacitor/preferences`, which is real native app storage — not a browser tab, so it doesn't get evicted the way mobile Safari can clear a home-screen web app's data after a period of disuse. This is the actual fix for the login-persistence problem that started this conversation.
-3. The WebView then navigates to `<your-server>/m` and stays there. Every future launch skips straight past the bootstrap screen once a URL is saved.
+1. Before running any `cap` command, copy `.env.example` to `.env` in this folder and set `DECAL_SERVER_URL` to your server's address (the same one you'd type into a browser at home).
+2. `capacitor.config.ts` reads that and sets it as `server.url` — Capacitor then loads your server as the WebView's actual home page at launch, instead of a packaged local page.
 
-This is the same pattern the Home Assistant companion app uses, for the same reason (a self-hosted server with no fixed address).
+This makes the WebView's home *origin* your own server, so ordinary navigation within it (following a link, NextAuth's own sign-in redirects, etc.) is same-origin and stays in the app. If you ever change `DECAL_SERVER_URL`, run `npx cap sync` and rebuild.
+
+An earlier version of this asked for the server address at runtime, on a bootstrap screen, and navigated there. That doesn't work — Capacitor treats a navigation to a *different* origin than the app's configured one as "external" and hands it to Safari/Chrome instead of the WebView, which is exactly the "opens Safari, gets stuck on Connecting, keeps bouncing to Safari on restart" behavior. Building per-family with `DECAL_SERVER_URL` set is the fix.
+
+### Signing in with Google
+
+Google refuses to complete OAuth from an embedded WebView at all (it returns a `disallowed_useragent` error) — that's enforced on Google's end, not something any Capacitor setting works around. So "Connect Google Calendar" behaves differently here than in a normal browser tab: on native, it opens NextAuth's sign-in page in a real system browser component (`SFSafariViewController` on iOS, Chrome Custom Tabs on Android, via the `@capacitor/browser` plugin) instead of the in-app WebView. That's a Google-sanctioned browser context, so sign-in completes normally there. It shares cookie storage with the app's own WebView, so once you tap "Done" to come back, the app already has your session — no separate linking step.
 
 ## Prerequisites
 
@@ -20,7 +25,13 @@ This is the same pattern the Home Assistant companion app uses, for the same rea
 
 ## First-time setup
 
-From the repo root (this is a pnpm workspace, so installing at the root covers this package too):
+From this folder (`apps/mobile`):
+
+```bash
+cp .env.example .env    # then edit DECAL_SERVER_URL to your server's address
+```
+
+Then from the repo root (this is a pnpm workspace, so installing at the root covers this package too):
 
 ```bash
 pnpm install
@@ -35,7 +46,7 @@ Both commands scaffold a native project folder that isn't checked in by default 
 
 Your Decal server almost certainly isn't behind HTTPS yet if you're just running it on your home network. Two separate things need to line up for that to work on mobile:
 
-1. **The WebView itself** — `capacitor.config.ts` already sets `cleartext: true` for Android, which allows loading a plain `http://` URL. iOS needs its own opt-in: after running `cap add ios`, open `ios/App/App/Info.plist` and add an App Transport Security exception for your server's host (replace `decal.local` with whatever you actually type into the connect screen):
+1. **The WebView itself** — `capacitor.config.ts` already sets `cleartext: true` for Android, which allows loading a plain `http://` URL. iOS needs its own opt-in: after running `cap add ios`, open `ios/App/App/Info.plist` and add an App Transport Security exception for your server's host (replace `decal.local` with whatever you set as `DECAL_SERVER_URL`):
 
    ```xml
    <key>NSAppTransportSecurity</key>
@@ -64,11 +75,11 @@ npx cap open android   # opens the Android Studio project
 
 From there it's a normal Xcode/Android Studio run — pick a simulator/emulator or a device plugged in over USB and hit Run. No app-store account is required to run on your own device this way (Xcode's free "Personal Team" signing works for a 7-day-refreshing install; Android just needs "install from unknown sources" enabled once).
 
-Whenever you change anything under `www/`, `capacitor.config.ts`, or add/remove a Capacitor plugin, run `npx cap sync` to push those changes into the native projects before rebuilding in Xcode/Android Studio.
+Whenever you change `.env`, `capacitor.config.ts`, or add/remove a Capacitor plugin, run `npx cap sync` to push those changes into the native projects before rebuilding in Xcode/Android Studio.
 
 ## What's not done yet
 
 - **App icon / splash screen** — currently the Capacitor placeholder. [`@capacitor/assets`](https://github.com/ionic-team/capacitor-assets) can generate a full icon set from one source image once you have one.
 - **Push notifications** — `@capacitor/push-notifications` is already a dependency so the plugin's there, but nothing calls it yet. This is the natural next step after the app itself is running, since it needs a server-side piece too (registering device tokens, sending on chore-due/event-starting).
-- **A way to change the saved server URL without reinstalling** — right now that's stored once and there's no in-app "disconnect" screen. Worth adding once you're actually using this day to day.
+- **Changing the server address without rebuilding** — right now `DECAL_SERVER_URL` is baked in at build time, so switching servers means editing `.env` and rebuilding. Fine for one family's own server; worth revisiting only if that address changes often.
 - **App Store / Play Store distribution** — not set up, and not necessary for personal/family use (sideloading as described above is enough). Worth revisiting only if you want it on a phone you can't plug into your Mac (e.g. Play Store's internal testing track, or Apple's TestFlight, are the lighter-weight options short of a full public listing).

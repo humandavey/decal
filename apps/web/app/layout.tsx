@@ -1,26 +1,22 @@
 import type { Metadata } from "next";
-import { Fraunces, Inter, IBM_Plex_Mono } from "next/font/google";
+// Self-hosted via @fontsource instead of next/font/google — see the
+// comment above the --font-* variables in globals.css for why. Only the
+// specific weights/styles actually used across the app are imported, to
+// keep the bundle lean (matches the weight lists the old next/font/google
+// config declared).
+import "@fontsource/fraunces/500.css";
+import "@fontsource/fraunces/600.css";
+import "@fontsource/fraunces/700.css";
+import "@fontsource/fraunces/500-italic.css";
+import "@fontsource/fraunces/600-italic.css";
+import "@fontsource/fraunces/700-italic.css";
+import "@fontsource/inter/400.css";
+import "@fontsource/inter/500.css";
+import "@fontsource/inter/600.css";
+import "@fontsource/ibm-plex-mono/400.css";
+import "@fontsource/ibm-plex-mono/500.css";
 import { Providers } from "./providers";
 import "./globals.css";
-
-const fraunces = Fraunces({
-  subsets: ["latin"],
-  variable: "--font-display",
-  weight: ["500", "600", "700"],
-  style: ["normal", "italic"]
-});
-
-const inter = Inter({
-  subsets: ["latin"],
-  variable: "--font-body",
-  weight: ["400", "500", "600"]
-});
-
-const plexMono = IBM_Plex_Mono({
-  subsets: ["latin"],
-  variable: "--font-mono",
-  weight: ["400", "500"]
-});
 
 export const metadata: Metadata = {
   title: "Decal — family calendar",
@@ -30,7 +26,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body className={`${fraunces.variable} ${inter.variable} ${plexMono.variable}`}>
+      <body>
         <Providers>{children}</Providers>
       </body>
     </html>
