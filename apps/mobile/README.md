@@ -47,6 +47,19 @@ Open `ios/App/App/Info.plist` and add:
 
 Without this, tapping "Connect Google Calendar" signs in fine in the browser sheet, but closing it back to the app leaves you signed out — iOS has no registered handler for `decal://` to route the handoff to.
 
+Android needs the equivalent registration, just as an intent filter instead of an `Info.plist` entry. **After `cap add android`**, open `android/app/src/main/AndroidManifest.xml`, find the `<activity>` block (the one with `android:name=".MainActivity"`), and add a second `<intent-filter>` inside it, alongside whichever one is already there:
+
+```xml
+<intent-filter>
+  <action android:name="android.intent.action.VIEW" />
+  <category android:name="android.intent.category.DEFAULT" />
+  <category android:name="android.intent.category.BROWSABLE" />
+  <data android:scheme="decal" />
+</intent-filter>
+```
+
+No Java/Kotlin changes needed beyond that — Capacitor's App plugin picks up `decal://` links and fires the same `appUrlOpen` event `SignInGate.tsx` already listens for on both platforms. This hasn't been tested end-to-end on a real Android device (nothing in this project has, yet), so treat it as the documented starting point rather than a guarantee — if "Connect Google Calendar" still leaves you signed out after adding this, that intent filter is the first thing worth double-checking (right XML, right `<activity>`, ran `cap sync` after).
+
 ## Prerequisites
 
 - Node + pnpm (already set up for the rest of the monorepo)
@@ -105,7 +118,7 @@ Whenever you change `capacitor.config.ts`, `www/index.html`, or add/remove a Cap
 
 ## What's not done yet
 
-- **Android sign-in hasn't been tested yet** — Chrome Custom Tabs (what `@capacitor/browser` opens on Android) may or may not share cookies with the app's WebView; if it doesn't, and you hit the same "signed in in the browser sheet, still signed out in the app" symptom, Android needs the equivalent of the iOS fix above: an intent filter for the `decal://` scheme in `android/app/src/main/AndroidManifest.xml` (the JS-side handoff logic in `SignInGate.tsx` already works cross-platform, it's only the native URL-scheme registration that's iOS-only right now).
+- **Android hasn't been tested on a real device yet** — the intent filter under "Signing in with Google" above is the documented fix for the same "signed in in the browser sheet, still signed out in the app" symptom iOS had before its `Info.plist` entry, since Chrome Custom Tabs (what `@capacitor/browser` opens on Android) is expected to have the same cookie-isolation behavior `SFSafariViewController` does — but it's unverified until someone actually runs it on a device or emulator.
 - **App icon / splash screen** — currently the Capacitor placeholder. [`@capacitor/assets`](https://github.com/ionic-team/capacitor-assets) can generate a full icon set from one source image once you have one.
 - **Push notifications** — `@capacitor/push-notifications` is already a dependency so the plugin's there, but nothing calls it yet. This is the natural next step after the app itself is running, since it needs a server-side piece too (registering device tokens, sending on chore-due/event-starting).
 - **App Store / Play Store distribution** — not set up, and not necessary for personal/family use (sideloading as described above is enough). Worth revisiting only if you want it on a phone you can't plug into your Mac (e.g. Play Store's internal testing track, or Apple's TestFlight, are the lighter-weight options short of a full public listing).

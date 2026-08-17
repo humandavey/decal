@@ -109,11 +109,15 @@ export function SignInGate() {
     };
   }, []);
 
+  const [connectError, setConnectError] = useState<string | null>(null);
+
   async function connect() {
     if (!isNative) {
       signIn("google");
       return;
     }
+
+    setConnectError(null);
 
     // /native-signin kicks off signIn("google") itself, the instant the
     // sheet finishes loading it — no second tap on a button inside the
@@ -124,17 +128,35 @@ export function SignInGate() {
     // callbackUrl defaults to window.location.href — this *page's* own
     // URL, not something a query string on it can override. See
     // app/native-signin/page.tsx.
-    await Browser.open({
-      url: `${window.location.origin}/native-signin`
-    });
+    try {
+      await Browser.open({
+        url: `${window.location.origin}/native-signin`
+      });
 
-    const listener = await Browser.addListener("browserFinished", () => {
-      listener.remove();
-      // Defensive fallback only, for if the user closes the sheet by hand
-      // before the appUrlOpen handoff above ever fires — re-check session
-      // state rather than leaving them stuck.
-      window.location.reload();
-    });
+      const listener = await Browser.addListener("browserFinished", () => {
+        listener.remove();
+        // Defensive fallback only, for if the user closes the sheet by hand
+        // before the appUrlOpen handoff above ever fires — re-check session
+        // state rather than leaving them stuck.
+        window.location.reload();
+      });
+    } catch (err) {
+      // Previously unhandled — a failure here (the Browser plugin not
+      // being registered in a stale native build after `cap sync` was
+      // skipped, or window.location.origin pointing somewhere unexpected)
+      // silently did nothing at all: the button just looked broken, with
+      // no error anywhere but the native console. Surfacing it here — and
+      // always logging it, so it shows up in Safari Web Inspector /
+      // Android's chrome://inspect even if this message isn't specific
+      // enough — turns that into something reportable.
+      // eslint-disable-next-line no-console
+      console.error("[decal] Browser.open failed in SignInGate.connect()", err);
+      setConnectError(
+        err instanceof Error && err.message
+          ? `Couldn't open the sign-in screen: ${err.message}`
+          : "Couldn't open the sign-in screen. Check the console for details."
+      );
+    }
   }
 
   return (
@@ -153,6 +175,7 @@ export function SignInGate() {
         <button style={styles.button} onClick={connect}>
           Connect Google Calendar
         </button>
+        {connectError && <p style={styles.connectError}>{connectError}</p>}
 
         {isNative && (
           <form onSubmit={switchServer} style={styles.serverSection}>
@@ -232,6 +255,11 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 15,
     fontWeight: 600,
     cursor: "pointer"
+  },
+  connectError: {
+    color: "var(--accent-1)",
+    fontSize: 13,
+    margin: "14px 0 0"
   },
   // Deliberately low-key compared to the button above — this is a rarely-
   // needed escape hatch (mainly "I logged out and want a different
