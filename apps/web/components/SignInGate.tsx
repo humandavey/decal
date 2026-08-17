@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { signIn } from "next-auth/react";
 import { Capacitor } from "@capacitor/core";
 import { Browser } from "@capacitor/browser";
@@ -69,6 +69,19 @@ export function SignInGate() {
   // routes to the listener below. We then redeem it with a plain fetch —
   // made from *this* WebView, not the isolated Safari one — whose
   // Set-Cookie response lands in this WebView's own cookie jar normally.
+  // True once the appUrlOpen handoff below has actually started handling a
+  // decal://auth-bridge redirect — read by connect()'s "browserFinished"
+  // fallback (see the comment there) so the two don't race each other. On
+  // Android specifically, the Custom Tab closing (which fires
+  // browserFinished) and the OS routing the decal:// redirect to this app
+  // (which fires appUrlOpen) can both happen within the same moment, and
+  // browserFinished's own window.location.reload() winning that race would
+  // reload the page mid-fetch, aborting the in-flight token redemption
+  // below and leaving the user back at this screen needing to tap Connect
+  // a second time — the exact symptom seen on a real Android device the
+  // first time this whole flow actually worked end-to-end.
+  const handoffInFlight = useRef(false);
+
   useEffect(() => {
     if (!Capacitor.isNativePlatform()) return;
 
@@ -84,6 +97,11 @@ export function SignInGate() {
       const token = parsed.searchParams.get("token");
       const dest = parsed.searchParams.get("dest") || "/m";
       if (!token) return;
+
+      // Set synchronously, before anything async below — see
+      // handoffInFlight's comment. What matters is that this is set before
+      // control ever yields, not that the redemption below has finished.
+      handoffInFlight.current = true;
 
       // Usually already gone by the time this fires (iOS hands off to the
       // app directly on a recognized custom scheme) — harmless no-op
@@ -137,8 +155,18 @@ export function SignInGate() {
         listener.remove();
         // Defensive fallback only, for if the user closes the sheet by hand
         // before the appUrlOpen handoff above ever fires — re-check session
-        // state rather than leaving them stuck.
-        window.location.reload();
+        // state rather than leaving them stuck. Delayed, and skipped
+        // entirely if handoffInFlight is already true, specifically so this
+        // doesn't win a race against that handoff's own in-flight token
+        // redemption fetch and reload out from under it — see
+        // handoffInFlight's comment above for the full story. 400ms is a
+        // generous heuristic for "the OS has had a real chance to deliver
+        // the decal:// redirect by now," not a measured requirement.
+        window.setTimeout(() => {
+          if (!handoffInFlight.current) {
+            window.location.reload();
+          }
+        }, 400);
       });
     } catch (err) {
       // Previously unhandled — a failure here (the Browser plugin not
