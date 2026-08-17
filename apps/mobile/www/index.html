@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
     <title>Decal</title>
     <style>
       :root {
@@ -48,43 +48,274 @@
         color: #8a8f9c;
         font-size: 14px;
         line-height: 1.6;
-        margin: 0 0 4px;
+        margin: 0 0 22px;
       }
-      code {
-        display: block;
-        margin-top: 16px;
+      form {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        text-align: left;
+      }
+      label {
+        font-size: 11px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: #8a8f9c;
+      }
+      input {
+        width: 100%;
         background: #1c1f26;
         border: 1px solid rgba(237, 233, 225, 0.16);
-        border-radius: 10px;
-        padding: 12px 14px;
-        font-size: 13px;
-        text-align: left;
-        word-break: break-all;
+        border-radius: 8px;
+        padding: 13px 14px;
+        color: #ede9e1;
+        /* 16px avoids iOS auto-zooming the page on focus — anything smaller
+           triggers it, and it doesn't reliably zoom back out afterward. */
+        font-size: 16px;
+        font-family: inherit;
+      }
+      input:focus {
+        outline: 2px solid #6e7bf2;
+        outline-offset: 1px;
+      }
+      button {
+        margin-top: 6px;
+        background: #f0633d;
+        color: #14171d;
+        border: none;
+        border-radius: 999px;
+        padding: 14px 20px;
+        font-size: 15px;
+        font-weight: 600;
+        cursor: pointer;
+        touch-action: manipulation;
+        -webkit-tap-highlight-color: transparent;
+      }
+      button:disabled {
+        opacity: 0.6;
+      }
+      .error {
+        display: none;
+        color: #f0633d;
+        font-size: 12.5px;
+        line-height: 1.5;
+        margin: 2px 0 0;
+      }
+      /* Nothing at all — not even "Connecting…" text — while checking for
+         a saved address. See the comment by #card below for why. */
+      #card {
+        display: none;
       }
     </style>
   </head>
   <body>
     <!--
-      This page only ever shows up if the app was built without
-      DECAL_SERVER_URL set (see apps/mobile/.env.example). In a normal
-      build, capacitor.config.ts sets `server.url` to your Decal server, so
-      Capacitor loads that origin directly at launch instead of this file —
-      there is nothing to click through or connect here at runtime anymore.
+      This is the very first thing the app shows on a fresh install (and
+      again after logging out — see ProfileContent.tsx's "Log out", which
+      clears the saved address below): Decal is self-hosted, so unlike a
+      normal app there's no fixed server to ship with the build. This page
+      asks for one, checks it's reachable, remembers it (via the Capacitor
+      Preferences plugin — real native storage, so it survives closing and
+      reopening the app, unlike a JS variable), and hands off to it.
 
-      (An earlier version of this app asked for the server address on this
-      screen and navigated to it from here. That doesn't work: Capacitor
-      treats a navigation to a different origin than the app's configured
-      one as "external" and hands it to Safari/Chrome instead of loading it
-      in the WebView — which is exactly the "opens Safari, then gets stuck
-      on Connecting" bug this build-time approach fixes.)
+      capacitor.config.ts deliberately leaves `server.url` unset so the app
+      boots here instead of straight to a remote origin, and sets
+      `allowNavigation: ["*"]` so navigating to whatever address gets
+      entered below stays inside this WebView instead of bouncing out to
+      Safari/Chrome — see the comment there for the full reasoning.
+
+      Plain HTML/JS, not a bundled framework page: this has to work with
+      zero knowledge of any server, so it can't be one of the Next.js pages
+      served by the app itself (those don't exist until a server is known).
     -->
-    <div class="card">
+    <!--
+      Hidden until JS actually decides it's needed (no saved address, or
+      the saved one didn't respond) — a device with a working saved
+      address never sees any of this, not even for a frame: just this
+      page's plain background while the (fast) native storage check +
+      reachability probe run, then straight on to the real app. No
+      "Loading…"/"Connecting…" text either — nothing to show one of those
+      instead of, in the version of this that flashed the form itself.
+    -->
+    <div class="card" id="card">
       <p class="eyebrow">Decal</p>
-      <h1>Server address not set</h1>
+      <h1>Connect to your server</h1>
       <p class="copy">
-        This build wasn't given a server to point at. On the machine you build this app from:
+        Decal is self-hosted — enter the address of your own family's server
+        (the same one you'd type into a browser at home).
       </p>
-      <code>cd apps/mobile<br />cp .env.example .env&nbsp;&nbsp;# then edit DECAL_SERVER_URL<br />npx cap sync<br /># rebuild in Xcode / Android Studio</code>
+
+      <form id="form">
+        <div>
+          <label for="url">Server address</label>
+          <input
+            id="url"
+            type="url"
+            inputmode="url"
+            autocapitalize="off"
+            autocorrect="off"
+            spellcheck="false"
+            placeholder="https://decal.yourdomain.com"
+          />
+        </div>
+        <p class="error" id="error"></p>
+        <button type="submit" id="submit">Continue</button>
+      </form>
     </div>
+
+    <script>
+      // Must match SERVER_URL_PREFERENCE_KEY in
+      // apps/web/lib/nativeServerPreference.ts — there's no bundler here to
+      // share that constant with, so the string is duplicated by hand.
+      var PREF_KEY = "decal_server_url";
+
+      function normalizeUrl(raw) {
+        var v = (raw || "").trim();
+        if (!v) return null;
+        if (!/^https?:\/\//i.test(v)) v = "https://" + v;
+        v = v.replace(/\/+$/, "");
+        try {
+          var u = new URL(v);
+          if (!u.hostname) return null;
+          return u.origin;
+        } catch (e) {
+          return null;
+        }
+      }
+
+      // A plain reachability probe, not a real health check: `no-cors`
+      // mode means the response body/status is invisible to us either way
+      // (the server doesn't send us CORS headers, and there's no reason it
+      // should just for this) — but the fetch promise itself still
+      // rejects on a genuine connection failure (DNS, refused, timeout),
+      // which is exactly the "you mistyped the address" case worth
+      // catching before committing to it.
+      function checkReachable(origin) {
+        return new Promise(function (resolve) {
+          var controller = new AbortController();
+          var timer = setTimeout(function () {
+            controller.abort();
+          }, 6000);
+          fetch(origin, { mode: "no-cors", signal: controller.signal })
+            .then(function () {
+              clearTimeout(timer);
+              resolve(true);
+            })
+            .catch(function () {
+              clearTimeout(timer);
+              resolve(false);
+            });
+        });
+      }
+
+      // Capacitor's native bridge (window.Capacitor) is injected by the
+      // native layer, not loaded via a <script src> this page controls —
+      // it's normally there almost immediately, but polling briefly rather
+      // than assuming it's ready the instant this script runs is cheap
+      // insurance against a race on a slow device.
+      function waitForCapacitor(maxWaitMs) {
+        return new Promise(function (resolve) {
+          var start = Date.now();
+          (function poll() {
+            if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Preferences) {
+              resolve(window.Capacitor.Plugins.Preferences);
+            } else if (Date.now() - start > maxWaitMs) {
+              resolve(null);
+            } else {
+              setTimeout(poll, 50);
+            }
+          })();
+        });
+      }
+
+      function main() {
+        var card = document.getElementById("card");
+        var form = document.getElementById("form");
+        var input = document.getElementById("url");
+        var errorEl = document.getElementById("error");
+        var submitBtn = document.getElementById("submit");
+
+        function showForm(prefill, error) {
+          card.style.display = "block";
+          if (prefill) input.value = prefill;
+          if (error) {
+            errorEl.textContent = error;
+            errorEl.style.display = "block";
+          } else {
+            errorEl.style.display = "none";
+          }
+        }
+
+        waitForCapacitor(2000).then(function (prefs) {
+          function afterPrefsReady() {
+            form.addEventListener("submit", function (e) {
+              e.preventDefault();
+              var normalized = normalizeUrl(input.value);
+              if (!normalized) {
+                errorEl.textContent = "Enter a valid address, like https://decal.yourdomain.com";
+                errorEl.style.display = "block";
+                return;
+              }
+              submitBtn.disabled = true;
+              submitBtn.textContent = "Checking…";
+              errorEl.style.display = "none";
+              checkReachable(normalized).then(function (ok) {
+                if (!ok) {
+                  submitBtn.disabled = false;
+                  submitBtn.textContent = "Continue";
+                  errorEl.textContent = "Couldn't reach " + normalized + ". Check the address and try again.";
+                  errorEl.style.display = "block";
+                  return;
+                }
+                function proceed() {
+                  window.location.href = normalized + "/m";
+                }
+                if (prefs) {
+                  prefs.set({ key: PREF_KEY, value: normalized }).then(proceed, proceed);
+                } else {
+                  proceed();
+                }
+              });
+            });
+          }
+
+          if (!prefs) {
+            // The bridge never came up — fail open to the form rather than
+            // getting stuck on a blank screen. Addresses just won't be
+            // remembered between launches in that (unexpected) case.
+            showForm();
+            afterPrefsReady();
+            return;
+          }
+
+          prefs
+            .get({ key: PREF_KEY })
+            .then(function (result) {
+              var stored = result && result.value;
+              if (!stored) {
+                showForm();
+                afterPrefsReady();
+                return;
+              }
+              // Still just the blank background here — no "Connecting…"
+              // text — while this check runs.
+              checkReachable(stored).then(function (ok) {
+                if (ok) {
+                  window.location.href = stored + "/m";
+                  return;
+                }
+                showForm(stored, "Couldn't reach " + stored + ". Check the address and try again.");
+                afterPrefsReady();
+              });
+            })
+            .catch(function () {
+              showForm();
+              afterPrefsReady();
+            });
+        });
+      }
+
+      main();
+    </script>
   </body>
 </html>

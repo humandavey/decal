@@ -149,7 +149,7 @@ export function MobileAgenda() {
               useFamilySyncListener above picks up. `bare` skips its own
               card chrome, since MobileFullScreenModal already supplies a
               title and scrollable frame. */}
-          <QuickAddPanel bare />
+          <QuickAddPanel bare hideMic />
         </MobileFullScreenModal>
       )}
     </div>

@@ -81,13 +81,22 @@ interface QuickAddPanelProps {
    * desktop sidebar usage (CalendarBoard) omits this and gets the normal
    * self-contained card. */
   bare?: boolean;
+  /** Hides the voice-input mic button even where the Web Speech API is
+   * otherwise detected as supported. MobileAgenda passes this — the mic
+   * button is a Chrome/desktop-Safari feature in practice; inside a
+   * Capacitor WKWebView, SpeechRecognition support is inconsistent at best
+   * and would need its own native mic-permission wiring (an
+   * NSMicrophoneUsageDescription entry, at minimum) that nothing here sets
+   * up, so showing it on mobile mostly just offers a button that doesn't
+   * work. */
+  hideMic?: boolean;
 }
 
 /** Paste-text-to-event: paste something with a date in it, get back an
  * editable preview, confirm to create it on your own Google Calendar. Never
  * creates anything without a confirm — parsing (AI or local) can get
  * details wrong, so nothing is written until the person looks it over. */
-export function QuickAddPanel({ bare }: QuickAddPanelProps) {
+export function QuickAddPanel({ bare, hideMic }: QuickAddPanelProps) {
   const [text, setText] = useState("");
   const [parsing, setParsing] = useState(false);
   const [parseError, setParseError] = useState<string | null>(null);
@@ -204,6 +213,8 @@ export function QuickAddPanel({ bare }: QuickAddPanelProps) {
     }
   }
 
+  const showMic = voiceSupported && !hideMic;
+
   const formBody = (
     <>
       {!draft ? (
@@ -213,10 +224,10 @@ export function QuickAddPanel({ bare }: QuickAddPanelProps) {
                 value={text}
                 onChange={(e) => setText(e.target.value)}
                 placeholder={'Paste anything with a date — "9pm-10pm Sunday, dinner at Joe\'s"'}
-                style={{ ...styles.textarea, ...(voiceSupported ? { paddingRight: 44 } : {}) }}
+                style={{ ...styles.textarea, ...(showMic ? { paddingRight: 44 } : {}) }}
                 rows={3}
               />
-              {voiceSupported && (
+              {showMic && (
                 <button
                   type="button"
                   onClick={toggleListening}

@@ -4,16 +4,24 @@ A thin native wrapper (via [Capacitor](https://capacitorjs.com)) around the same
 
 ## How it connects to your server
 
-Decal is self-hosted, so unlike a normal app there's no single fixed backend URL to bake in — but it does get baked in, at **build time**, per family:
+Decal is self-hosted — that's the point, so one build of this app has to work for anyone's server, not just one family's. The address is entered **at runtime**, on first launch, not baked in at build time:
 
-1. Before running any `cap` command, copy `.env.example` to `.env` in this folder and set `DECAL_SERVER_URL` to your server's address (the same one you'd type into a browser at home) — no trailing slash, no path, just e.g. `https://decal.yourdomain.com`.
-2. `capacitor.config.ts` reads that and sets `server.url` to `<DECAL_SERVER_URL>/m` — Capacitor then loads that exact page as the WebView's home page at launch, instead of a packaged local page.
+1. On first open (nothing saved yet — see `www/index.html`), the app shows a plain "enter your server address" screen. It does a quick reachability check before continuing, so a typo gets caught immediately instead of leaving you on a blank/broken screen.
+2. Once entered, the address is saved via the [Preferences plugin](https://capacitorjs.com/docs/apis/preferences) — real native storage, so it's remembered across app restarts, not just for one session — and the app navigates straight there (specifically to its `/m` routes; see below).
+3. Every launch after that jumps straight to the saved server, skipping the entry screen entirely, for as long as that address stays reachable and you're not logged out (see "Switching servers or signing out" below).
 
-The `/m` matters: `server.url` is the *exact* starting page, not just an origin. Without it the app loads `/` — the desktop kiosk dashboard's side-by-side layout — instead of the mobile-optimized bottom-tab routes under `apps/web/app/m/`. This is invisible before signing in (both show the same sign-in screen when logged out), which is exactly why it can go unnoticed until after sign-in is actually working.
+Two `capacitor.config.ts` settings are what make this possible without hitting the bug an earlier version of this had:
 
-This makes the WebView's home *origin* your own server, so ordinary navigation within it (following a link, NextAuth's own sign-in redirects, etc.) is same-origin and stays in the app. If you ever change `DECAL_SERVER_URL`, run `npx cap sync` and rebuild.
+- `server.url` is deliberately **left unset**. Setting it (the old approach: baking one family's server in at build time) is what makes Capacitor boot straight into a fixed remote origin; leaving it unset is what makes the app boot into the bundled `www/index.html` first, so there's somewhere to ask for an address before any server is known.
+- `server.allowNavigation: ["*"]` is what lets navigating from that local page to whatever address gets typed in — an entirely different origin — happen *inside* the WebView instead of Capacitor treating it as "external" and bouncing to Safari/Chrome. Capacitor's own docs call a wildcard here "not intended for production," but that guidance targets apps that navigate out to *third-party* sites they don't own (an OAuth provider, say) — here, the "external" site being navigated to *is* the app: the user's own self-hosted server, which becomes the real content of the WebView for as long as they're signed in. It's the same pattern other self-hosted-service companion apps generally use.
 
-An earlier version of this asked for the server address at runtime, on a bootstrap screen, and navigated there. That doesn't work — Capacitor treats a navigation to a *different* origin than the app's configured one as "external" and hands it to Safari/Chrome instead of the WebView, which is exactly the "opens Safari, gets stuck on Connecting, keeps bouncing to Safari on restart" behavior. Building per-family with `DECAL_SERVER_URL` set is the fix.
+The `/m` matters too: the app always navigates to `<address>/m`, not just `<address>`, since `/m` is the mobile-optimized bottom-tab route tree (`apps/web/app/m/`) — the bare origin would land on the desktop kiosk's side-by-side dashboard layout instead.
+
+### Switching servers or signing out
+
+The "Log out" button (Profile tab) forgets the saved address in addition to signing out, so the *next time the app itself is opened* it asks for a server again instead of silently reconnecting to the same one — treat logging out as "start over," not just "sign out of this one." It does **not** touch anything on the server itself: no family, member, chore, meal, note, or calendar connection is deleted by logging out, on any device. It only ever affects this one device's session and its locally-saved address.
+
+You don't have to fully log out just to point at a different server, though: the sign-in screen also has a "Server" field next to the Connect button, pre-filled with whatever server you're currently on, editable at any time. Changing it and tapping Switch does the same reachability check + save + navigate as first-launch entry, without needing to log out first (useful for testing against a second server, or if you got the address wrong the first time and are still signed out).
 
 ### Signing in with Google
 
@@ -47,13 +55,7 @@ Without this, tapping "Connect Google Calendar" signs in fine in the browser she
 
 ## First-time setup
 
-From this folder (`apps/mobile`):
-
-```bash
-cp .env.example .env    # then edit DECAL_SERVER_URL to your server's address
-```
-
-Then from the repo root (this is a pnpm workspace, so installing at the root covers this package too):
+From the repo root (this is a pnpm workspace, so installing at the root covers this package too):
 
 ```bash
 pnpm install
@@ -68,7 +70,7 @@ Both commands scaffold a native project folder that isn't checked in by default 
 
 Your Decal server almost certainly isn't behind HTTPS yet if you're just running it on your home network. Two separate things need to line up for that to work on mobile:
 
-1. **The WebView itself** — `capacitor.config.ts` already sets `cleartext: true` for Android, which allows loading a plain `http://` URL. iOS needs its own opt-in: after running `cap add ios`, open `ios/App/App/Info.plist` and add an App Transport Security exception for your server's host (replace `decal.local` with whatever you set as `DECAL_SERVER_URL`):
+1. **The WebView itself** — `capacitor.config.ts` already sets `cleartext: true` for Android, which allows loading a plain `http://` URL. iOS needs its own opt-in: after running `cap add ios`, open `ios/App/App/Info.plist` and add an App Transport Security exception for your server's host (replace `decal.local` with the actual address you plan to enter on the app's sign-in screen):
 
    ```xml
    <key>NSAppTransportSecurity</key>
@@ -88,6 +90,8 @@ Your Decal server almost certainly isn't behind HTTPS yet if you're just running
 
 If you just want to click around in a simulator against `localhost`, cleartext HTTP is fine for that. For actual daily use on your family's phones, HTTPS is worth setting up.
 
+Note that the ATS exception above is tied to one specific domain, hand-edited into `Info.plist` — since the server address is now typed in at runtime rather than fixed at build time, that exception only helps if you actually enter the exact address it names. This is really just another point in favor of HTTPS: it's a one-time setup step regardless of which server address ends up getting typed in, rather than something that has to be kept in sync with it.
+
 ## Running it
 
 ```bash
@@ -97,12 +101,11 @@ npx cap open android   # opens the Android Studio project
 
 From there it's a normal Xcode/Android Studio run — pick a simulator/emulator or a device plugged in over USB and hit Run. No app-store account is required to run on your own device this way (Xcode's free "Personal Team" signing works for a 7-day-refreshing install; Android just needs "install from unknown sources" enabled once).
 
-Whenever you change `.env`, `capacitor.config.ts`, or add/remove a Capacitor plugin, run `npx cap sync` to push those changes into the native projects before rebuilding in Xcode/Android Studio.
+Whenever you change `capacitor.config.ts`, `www/index.html`, or add/remove a Capacitor plugin, run `npx cap sync` to push those changes into the native projects before rebuilding in Xcode/Android Studio. Since the server address is now entered at runtime rather than baked into the build, you generally do **not** need to rebuild just to point at a different server — see "Switching servers or signing out" above.
 
 ## What's not done yet
 
 - **Android sign-in hasn't been tested yet** — Chrome Custom Tabs (what `@capacitor/browser` opens on Android) may or may not share cookies with the app's WebView; if it doesn't, and you hit the same "signed in in the browser sheet, still signed out in the app" symptom, Android needs the equivalent of the iOS fix above: an intent filter for the `decal://` scheme in `android/app/src/main/AndroidManifest.xml` (the JS-side handoff logic in `SignInGate.tsx` already works cross-platform, it's only the native URL-scheme registration that's iOS-only right now).
 - **App icon / splash screen** — currently the Capacitor placeholder. [`@capacitor/assets`](https://github.com/ionic-team/capacitor-assets) can generate a full icon set from one source image once you have one.
 - **Push notifications** — `@capacitor/push-notifications` is already a dependency so the plugin's there, but nothing calls it yet. This is the natural next step after the app itself is running, since it needs a server-side piece too (registering device tokens, sending on chore-due/event-starting).
-- **Changing the server address without rebuilding** — right now `DECAL_SERVER_URL` is baked in at build time, so switching servers means editing `.env` and rebuilding. Fine for one family's own server; worth revisiting only if that address changes often.
 - **App Store / Play Store distribution** — not set up, and not necessary for personal/family use (sideloading as described above is enough). Worth revisiting only if you want it on a phone you can't plug into your Mac (e.g. Play Store's internal testing track, or Apple's TestFlight, are the lighter-weight options short of a full public listing).

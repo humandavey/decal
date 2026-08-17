@@ -5,6 +5,7 @@ import { signIn } from "next-auth/react";
 import { Capacitor } from "@capacitor/core";
 import { Browser } from "@capacitor/browser";
 import { App as CapacitorApp } from "@capacitor/app";
+import { checkServerReachable, normalizeServerUrl, saveServerUrl } from "@/lib/nativeServerPreference";
 
 export function SignInGate() {
   // Capacitor.isNativePlatform() touches `window`, so this is computed
@@ -16,6 +17,44 @@ export function SignInGate() {
   useEffect(() => {
     setIsNative(Capacitor.isNativePlatform());
   }, []);
+
+  // Whatever server this page is currently being served from — which, on
+  // native, is also "whatever address the app's bootstrap screen (or a
+  // previous switch, right here) last sent it to." Read directly from
+  // location rather than the saved-address native storage: they're the
+  // same value once the app is actually running, and this way the field
+  // is correct even if the saved value was cleared (e.g. right after
+  // logging out — see ProfileContent.tsx) without needing this page to
+  // reach into native storage just to display something it already knows.
+  const [serverInput, setServerInput] = useState("");
+  const [switching, setSwitching] = useState(false);
+  const [switchError, setSwitchError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setServerInput(window.location.origin);
+  }, []);
+
+  async function switchServer(e: React.FormEvent) {
+    e.preventDefault();
+    const normalized = normalizeServerUrl(serverInput);
+    if (!normalized) {
+      setSwitchError("Enter a valid address, like https://decal.yourdomain.com");
+      return;
+    }
+    if (normalized === window.location.origin) return; // nothing to do
+    setSwitching(true);
+    setSwitchError(null);
+    const reachable = await checkServerReachable(normalized);
+    if (!reachable) {
+      setSwitching(false);
+      setSwitchError(`Couldn't reach ${normalized}. Check the address and try again.`);
+      return;
+    }
+    // Saved *before* navigating, same as the bootstrap screen — so this
+    // is what the app jumps straight to next launch, not just this tab.
+    await saveServerUrl(normalized);
+    window.location.href = `${normalized}/m`;
+  }
 
   // Google refuses to complete OAuth from an embedded WebView at all (the
   // `disallowed_useragent` error, enforced Google-side), so native sign-in
@@ -114,6 +153,34 @@ export function SignInGate() {
         <button style={styles.button} onClick={connect}>
           Connect Google Calendar
         </button>
+
+        {isNative && (
+          <form onSubmit={switchServer} style={styles.serverSection}>
+            <label style={styles.serverLabel} htmlFor="server-address">
+              Server
+            </label>
+            <div style={styles.serverRow}>
+              <input
+                id="server-address"
+                type="url"
+                inputMode="url"
+                autoCapitalize="off"
+                autoCorrect="off"
+                spellCheck={false}
+                value={serverInput}
+                onChange={(e) => {
+                  setServerInput(e.target.value);
+                  setSwitchError(null);
+                }}
+                style={styles.serverInput}
+              />
+              <button type="submit" style={styles.serverSwitchButton} disabled={switching}>
+                {switching ? "Checking…" : "Switch"}
+              </button>
+            </div>
+            {switchError && <p style={styles.serverError}>{switchError}</p>}
+          </form>
+        )}
       </div>
     </div>
   );
@@ -165,5 +232,55 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 15,
     fontWeight: 600,
     cursor: "pointer"
+  },
+  // Deliberately low-key compared to the button above — this is a rarely-
+  // needed escape hatch (mainly "I logged out and want a different
+  // server," or "I mistyped it the first time"), not a second call to
+  // action competing with Connect.
+  serverSection: {
+    marginTop: 24,
+    paddingTop: 20,
+    borderTop: "1px solid var(--color-hairline)",
+    textAlign: "left"
+  },
+  serverLabel: {
+    display: "block",
+    fontFamily: "var(--font-mono)",
+    fontSize: 10.5,
+    letterSpacing: "0.1em",
+    textTransform: "uppercase",
+    color: "var(--color-muted)",
+    margin: "0 0 8px"
+  },
+  serverRow: {
+    display: "flex",
+    gap: 8
+  },
+  serverInput: {
+    flex: 1,
+    minWidth: 0,
+    background: "var(--color-ink-deep)",
+    border: "1px solid var(--color-hairline-strong)",
+    borderRadius: 8,
+    padding: "10px 12px",
+    color: "var(--color-paper)",
+    fontSize: 13.5,
+    fontFamily: "inherit"
+  },
+  serverSwitchButton: {
+    flexShrink: 0,
+    background: "transparent",
+    border: "1px solid var(--color-hairline-strong)",
+    borderRadius: 8,
+    padding: "10px 14px",
+    fontSize: 13,
+    fontWeight: 600,
+    color: "var(--color-paper)",
+    cursor: "pointer"
+  },
+  serverError: {
+    color: "var(--accent-1)",
+    fontSize: 12,
+    margin: "10px 0 0"
   }
 };

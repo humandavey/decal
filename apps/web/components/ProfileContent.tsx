@@ -2,8 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { signOut, useSession } from "next-auth/react";
+import { Capacitor } from "@capacitor/core";
 import { FAMILY_PALETTE } from "@decal/shared-types";
 import { parseDateOnly, startOfDay } from "@/lib/dates";
+import { clearSavedServerUrl } from "@/lib/nativeServerPreference";
 
 interface ProfileContentProps {
   /** This member's current color, if known yet (loads with the calendar events). */
@@ -119,6 +121,25 @@ export function ProfileContent({ color, onColorChanged }: ProfileContentProps) {
     }
   }
 
+  // This only ever signs out of Decal — it does not touch the family, its
+  // members, or anything anyone's added (chores, meals, notes, calendar
+  // connections). "Disconnect" used to imply otherwise; this is a plain
+  // sign-out, renamed to say so, since the only thing that changes is
+  // *this device's* session.
+  //
+  // The one extra step, native-only: forget the saved server address (see
+  // lib/nativeServerPreference.ts) so the *next time the app itself is
+  // opened* — not just this screen — it asks for a server again instead of
+  // silently reconnecting to this one. SignInGate's own address field
+  // still shows this exact server right after logging out, in case that's
+  // still the right one to reconnect to.
+  async function logOut() {
+    if (Capacitor.isNativePlatform()) {
+      await clearSavedServerUrl();
+    }
+    signOut();
+  }
+
   const user = session?.user;
 
   return (
@@ -189,8 +210,8 @@ export function ProfileContent({ color, onColorChanged }: ProfileContentProps) {
         )}
       </div>
 
-      <button type="button" style={styles.signOutButton} onClick={() => signOut()}>
-        Disconnect
+      <button type="button" style={styles.signOutButton} onClick={logOut}>
+        Log out
       </button>
     </div>
   );
