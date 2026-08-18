@@ -129,7 +129,7 @@ export async function POST(request: Request) {
   if (unauthorized) return unauthorized;
 
   const body = await request.json().catch(() => ({}));
-  const { title, description, location, start, end, allDay, recurrence } = body as {
+  const { title, description, location, start, end, allDay, recurrence, timeZone } = body as {
     title?: string;
     description?: string;
     location?: string;
@@ -142,6 +142,14 @@ export async function POST(request: Request) {
     // an RRULE's UNTIL clause genuinely needs. Passed straight through to
     // Google's API untouched; this route only validates the shape.
     recurrence?: string[];
+    // An IANA name (e.g. "America/New_York") from the browser's own
+    // Intl.DateTimeFormat().resolvedOptions().timeZone — required by
+    // Google Calendar's API on a recurring event's start/end (a bare UTC
+    // instant alone isn't enough for it to know what "every Wednesday at
+    // 4pm" means in local civil time across DST changes; see eventBody
+    // below). Optional for a one-time event, but harmless to include
+    // either way, so it's always sent.
+    timeZone?: string;
   };
 
   if (!title?.trim() || !start || !end) {
@@ -169,12 +177,17 @@ export async function POST(request: Request) {
     );
   }
 
+  // All-day events use `date` (a bare "YYYY-MM-DD", already unambiguous —
+  // no time-of-day to attach a zone to), so timeZone only applies to the
+  // `dateTime` case.
+  const zone = typeof timeZone === "string" && timeZone.trim() ? timeZone.trim() : undefined;
+
   const eventBody: calendar_v3.Schema$Event = {
     summary: title.trim(),
     description: description?.trim() || undefined,
     location: location?.trim() || undefined,
-    start: allDay ? { date: start } : { dateTime: start },
-    end: allDay ? { date: end } : { dateTime: end },
+    start: allDay ? { date: start } : { dateTime: start, timeZone: zone },
+    end: allDay ? { date: end } : { dateTime: end, timeZone: zone },
     recurrence: recurrenceRules
   };
 

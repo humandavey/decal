@@ -219,7 +219,18 @@ export function QuickAddPanel({ bare, hideMic }: QuickAddPanelProps) {
           start: startISO,
           end: endISO,
           allDay: draft.allDay,
-          recurrence: draft.recurrence ? buildRecurrenceRules(draft.recurrence) : undefined
+          recurrence: draft.recurrence ? buildRecurrenceRules(draft.recurrence) : undefined,
+          // Google Calendar requires an explicit IANA time zone on a
+          // recurring event's start/end — a bare UTC instant (what
+          // startISO/endISO above already are) is fine for a one-time
+          // event, but not enough for Google to know what "every
+          // Wednesday at 4pm" means in LOCAL civil time across DST
+          // changes. Omitting it is exactly what made recurring events
+          // fail outright while normal ones kept working. Resolving it
+          // here (not server-side) for the same reason startISO/endISO
+          // are built here: this is the only place that actually knows
+          // the family's real timezone.
+          timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
         })
       });
       const data = await res.json().catch(() => ({}));
