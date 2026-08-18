@@ -101,6 +101,9 @@
         line-height: 1.5;
         margin: 2px 0 0;
       }
+      #restartWrap {
+        display: none;
+      }
       /* Nothing at all — not even "Connecting…" text — while checking for
          a saved address. See the comment by #card below for why. */
       #card {
@@ -138,29 +141,52 @@
       instead of, in the version of this that flashed the form itself.
     -->
     <div class="card" id="card">
-      <p class="eyebrow">Decal</p>
-      <h1>Connect to your server</h1>
-      <p class="copy">
-        Decal is self-hosted — enter the address of your own family's server
-        (the same one you'd type into a browser at home).
-      </p>
+      <div id="formWrap">
+        <p class="eyebrow">Decal</p>
+        <h1>Connect to your server</h1>
+        <p class="copy">
+          Decal is self-hosted — enter the address of your own family's server
+          (the same one you'd type into a browser at home).
+        </p>
 
-      <form id="form">
-        <div>
-          <label for="url">Server address</label>
-          <input
-            id="url"
-            type="url"
-            inputmode="url"
-            autocapitalize="off"
-            autocorrect="off"
-            spellcheck="false"
-            placeholder="https://decal.yourdomain.com"
-          />
-        </div>
-        <p class="error" id="error"></p>
-        <button type="submit" id="submit">Continue</button>
-      </form>
+        <form id="form">
+          <div>
+            <label for="url">Server address</label>
+            <input
+              id="url"
+              type="url"
+              inputmode="url"
+              autocapitalize="off"
+              autocorrect="off"
+              spellcheck="false"
+              placeholder="https://decal.yourdomain.com"
+            />
+          </div>
+          <p class="error" id="error"></p>
+          <button type="submit" id="submit">Continue</button>
+        </form>
+      </div>
+
+      <!--
+        Android-only path — see MainActivity.java's big comment for the full
+        story. Capacitor's Android bridge only reattaches native plugins
+        (Google sign-in among them) to a newly-saved server address on the
+        NEXT cold start, not the same session that just saved it. Sending
+        Android straight to the new address anyway would land on a page
+        where nothing native works, with no clue why — this tells the
+        person exactly what to do instead. iOS has no such restriction and
+        never shows this.
+      -->
+      <div id="restartWrap">
+        <p class="eyebrow">Decal</p>
+        <h1>One more step</h1>
+        <p class="copy">
+          Your server address is saved. Android needs Decal fully restarted
+          once before it can finish connecting — tap below to close the app,
+          then open it again from your home screen.
+        </p>
+        <button type="button" id="restartButton">Close Decal</button>
+      </div>
     </div>
 
     <script>
@@ -230,6 +256,9 @@
 
       function main() {
         var card = document.getElementById("card");
+        var formWrap = document.getElementById("formWrap");
+        var restartWrap = document.getElementById("restartWrap");
+        var restartButton = document.getElementById("restartButton");
         var form = document.getElementById("form");
         var input = document.getElementById("url");
         var errorEl = document.getElementById("error");
@@ -237,6 +266,8 @@
 
         function showForm(prefill, error) {
           card.style.display = "block";
+          formWrap.style.display = "block";
+          restartWrap.style.display = "none";
           if (prefill) input.value = prefill;
           if (error) {
             errorEl.textContent = error;
@@ -244,6 +275,23 @@
           } else {
             errorEl.style.display = "none";
           }
+        }
+
+        // See restartWrap's comment above — only reached right after saving
+        // a server address THIS session, on Android specifically.
+        function showRestartPrompt() {
+          card.style.display = "block";
+          formWrap.style.display = "none";
+          restartWrap.style.display = "block";
+          var appPlugin = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App;
+          restartButton.onclick = function () {
+            if (appPlugin && typeof appPlugin.exitApp === "function") {
+              appPlugin.exitApp();
+            }
+            // If the App plugin isn't there for some reason, the button
+            // just does nothing — the instruction text above still tells
+            // the person what to do by hand.
+          };
         }
 
         waitForCapacitor(2000).then(function (prefs) {
@@ -268,6 +316,15 @@
                   return;
                 }
                 function proceed() {
+                  // Android only — see restartWrap's comment above. iOS (and
+                  // plain web, for local dev) keeps navigating immediately,
+                  // since only Android's plugin bridge has this restriction.
+                  if (window.Capacitor && window.Capacitor.getPlatform && window.Capacitor.getPlatform() === "android") {
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = "Continue";
+                    showRestartPrompt();
+                    return;
+                  }
                   window.location.href = normalized + "/m";
                 }
                 if (prefs) {

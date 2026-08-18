@@ -29,6 +29,14 @@ export function SignInGate() {
   const [serverInput, setServerInput] = useState("");
   const [switching, setSwitching] = useState(false);
   const [switchError, setSwitchError] = useState<string | null>(null);
+  // Android only — see MainActivity.java's big comment and
+  // www/index.html's matching restartWrap. Capacitor's Android bridge only
+  // reattaches native plugins to a newly-saved server address on the NEXT
+  // cold start, not this same running session, so navigating straight to
+  // the new address here would land on a page where nothing native works
+  // (Google sign-in included) with no explanation why. iOS has no such
+  // restriction and never sets this.
+  const [needsRestart, setNeedsRestart] = useState(false);
 
   useEffect(() => {
     setServerInput(window.location.origin);
@@ -53,6 +61,13 @@ export function SignInGate() {
     // Saved *before* navigating, same as the bootstrap screen — so this
     // is what the app jumps straight to next launch, not just this tab.
     await saveServerUrl(normalized);
+
+    if (Capacitor.getPlatform() === "android") {
+      setSwitching(false);
+      setNeedsRestart(true);
+      return;
+    }
+
     window.location.href = `${normalized}/m`;
   }
 
@@ -205,32 +220,52 @@ export function SignInGate() {
         </button>
         {connectError && <p style={styles.connectError}>{connectError}</p>}
 
-        {isNative && (
-          <form onSubmit={switchServer} style={styles.serverSection}>
-            <label style={styles.serverLabel} htmlFor="server-address">
-              Server
-            </label>
-            <div style={styles.serverRow}>
-              <input
-                id="server-address"
-                type="url"
-                inputMode="url"
-                autoCapitalize="off"
-                autoCorrect="off"
-                spellCheck={false}
-                value={serverInput}
-                onChange={(e) => {
-                  setServerInput(e.target.value);
-                  setSwitchError(null);
-                }}
-                style={styles.serverInput}
-              />
-              <button type="submit" style={styles.serverSwitchButton} disabled={switching}>
-                {switching ? "Checking…" : "Switch"}
-              </button>
-            </div>
-            {switchError && <p style={styles.serverError}>{switchError}</p>}
-          </form>
+        {isNative && needsRestart ? (
+          <div style={styles.serverSection}>
+            <p style={styles.serverLabel}>One more step</p>
+            <p style={styles.restartCopy}>
+              Your new server address is saved. Android needs Decal fully
+              restarted once before it can finish connecting — tap below to
+              close the app, then open it again from your home screen.
+            </p>
+            <button
+              type="button"
+              style={styles.serverSwitchButton}
+              onClick={() => {
+                CapacitorApp.exitApp();
+              }}
+            >
+              Close Decal
+            </button>
+          </div>
+        ) : (
+          isNative && (
+            <form onSubmit={switchServer} style={styles.serverSection}>
+              <label style={styles.serverLabel} htmlFor="server-address">
+                Server
+              </label>
+              <div style={styles.serverRow}>
+                <input
+                  id="server-address"
+                  type="url"
+                  inputMode="url"
+                  autoCapitalize="off"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  value={serverInput}
+                  onChange={(e) => {
+                    setServerInput(e.target.value);
+                    setSwitchError(null);
+                  }}
+                  style={styles.serverInput}
+                />
+                <button type="submit" style={styles.serverSwitchButton} disabled={switching}>
+                  {switching ? "Checking…" : "Switch"}
+                </button>
+              </div>
+              {switchError && <p style={styles.serverError}>{switchError}</p>}
+            </form>
+          )
         )}
       </div>
     </div>
@@ -338,5 +373,11 @@ const styles: Record<string, React.CSSProperties> = {
     color: "var(--accent-1)",
     fontSize: 12,
     margin: "10px 0 0"
+  },
+  restartCopy: {
+    color: "var(--color-muted)",
+    fontSize: 13.5,
+    lineHeight: 1.6,
+    margin: "0 0 14px"
   }
 };
