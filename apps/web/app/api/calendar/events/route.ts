@@ -129,18 +129,28 @@ export async function POST(request: Request) {
   if (unauthorized) return unauthorized;
 
   const body = await request.json().catch(() => ({}));
-  const { title, description, location, start, end, allDay } = body as {
+  const { title, description, location, start, end, allDay, recurrence } = body as {
     title?: string;
     description?: string;
     location?: string;
     start?: string;
     end?: string;
     allDay?: boolean;
+    // Raw RFC 5545 lines, e.g. ["RRULE:FREQ=WEEKLY;BYDAY=WE;UNTIL=20251217T065959Z"] —
+    // already fully assembled client-side (see QuickAddPanel's create()), since
+    // that's the only place with access to the browser's real timezone, which
+    // an RRULE's UNTIL clause genuinely needs. Passed straight through to
+    // Google's API untouched; this route only validates the shape.
+    recurrence?: string[];
   };
 
   if (!title?.trim() || !start || !end) {
     return NextResponse.json({ error: "title, start, and end are required" }, { status: 400 });
   }
+  const recurrenceRules =
+    Array.isArray(recurrence) && recurrence.every((rule) => typeof rule === "string" && rule.startsWith("RRULE:"))
+      ? recurrence
+      : undefined;
 
   const membership = await prisma.familyMembership.findUnique({
     where: { familyId_userId: { familyId: session.familyId, userId: session.userId } },
@@ -164,7 +174,8 @@ export async function POST(request: Request) {
     description: description?.trim() || undefined,
     location: location?.trim() || undefined,
     start: allDay ? { date: start } : { dateTime: start },
-    end: allDay ? { date: end } : { dateTime: end }
+    end: allDay ? { date: end } : { dateTime: end },
+    recurrence: recurrenceRules
   };
 
   try {

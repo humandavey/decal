@@ -74,6 +74,29 @@ function addOneHour(timeStr: string) {
   return `${pad(Math.floor(total / 60))}:${pad(total % 60)}`;
 }
 
+/** Turns a RecurrenceDraft (plain wall-clock fields, per its own comment in
+ * lib/quickAdd.ts) into the actual RFC 5545 lines Google Calendar expects.
+ * The one part that genuinely needs a real instant — UNTIL — is built here
+ * specifically because this is client code running in the browser, so
+ * `combineLocal` below resolves it in the family's own actual timezone,
+ * the same way startISO/endISO already do in create() — doing this
+ * server-side would use whatever timezone the server container happens to
+ * be running in instead, silently wrong for anyone not in that timezone. */
+function buildRecurrenceRules(recurrence: NonNullable<ParsedEventDraft["recurrence"]>): string[] {
+  const parts = [`FREQ=${recurrence.freq}`];
+  if (recurrence.byDay?.length) parts.push(`BYDAY=${recurrence.byDay.join(",")}`);
+  if (recurrence.untilDate) {
+    // End-of-day LOCAL time on the until date, so the intended last
+    // occurrence (whatever time of day the event actually falls at) is
+    // still included — RRULE's UNTIL is inclusive only if it's
+    // timestamped at or after that occurrence's own start.
+    const untilLocal = combineLocal(recurrence.untilDate, "23:59");
+    const stamp = untilLocal.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
+    parts.push(`UNTIL=${stamp}`);
+  }
+  return [`RRULE:${parts.join(";")}`];
+}
+
 interface QuickAddPanelProps {
   /** Skips this component's own card chrome (border/background/heading) —
    * for use inside something that already supplies a title and scrollable
@@ -195,7 +218,8 @@ export function QuickAddPanel({ bare, hideMic }: QuickAddPanelProps) {
           location: draft.location || undefined,
           start: startISO,
           end: endISO,
-          allDay: draft.allDay
+          allDay: draft.allDay,
+          recurrence: draft.recurrence ? buildRecurrenceRules(draft.recurrence) : undefined
         })
       });
       const data = await res.json().catch(() => ({}));
@@ -273,9 +297,26 @@ export function QuickAddPanel({ bare, hideMic }: QuickAddPanelProps) {
               All day
             </label>
 
+            {draft.recurrence && (
+              <div style={styles.recurrenceRow}>
+                <span style={styles.recurrenceLabel}>
+                  <span style={styles.recurrenceBadge}>Repeats</span>
+                  {draft.recurrence.label}
+                </span>
+                <button
+                  type="button"
+                  style={styles.recurrenceClear}
+                  onClick={() => updateDraft({ recurrence: null })}
+                  title="Turn this into a one-time event instead"
+                >
+                  Make one-time
+                </button>
+              </div>
+            )}
+
             <div style={styles.formGrid}>
               <label style={styles.fieldLabel}>
-                Starts
+                {draft.recurrence ? "First occurrence" : "Starts"}
                 <input
                   type="date"
                   value={draft.startDate}
@@ -467,6 +508,39 @@ const styles: Record<string, React.CSSProperties> = {
     gap: 8,
     fontSize: 13,
     color: "var(--color-paper)"
+  },
+  recurrenceRow: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8,
+    background: "var(--color-ink-deep)",
+    border: "1px solid var(--color-hairline-strong)",
+    borderRadius: 8,
+    padding: "8px 10px"
+  },
+  recurrenceLabel: {
+    display: "flex",
+    alignItems: "center",
+    gap: 8,
+    fontSize: 12.5,
+    color: "var(--color-paper)"
+  },
+  recurrenceBadge: {
+    fontFamily: "var(--font-mono)",
+    fontSize: 10,
+    letterSpacing: "0.08em",
+    textTransform: "uppercase",
+    color: "var(--accent-5)"
+  },
+  recurrenceClear: {
+    flexShrink: 0,
+    background: "transparent",
+    border: "none",
+    color: "var(--color-muted)",
+    fontSize: 11.5,
+    textDecoration: "underline",
+    cursor: "pointer"
   },
   formGrid: {
     display: "grid",
