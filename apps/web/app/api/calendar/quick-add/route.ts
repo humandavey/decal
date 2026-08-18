@@ -82,7 +82,14 @@ const EVERY_WEEKDAY_RE =
 const WEEKLY_ON_WEEKDAY_RE =
   /\bweekly\s+on\s+(sunday|monday|tuesday|wednesday|thursday|friday|saturday)s?\b/i;
 const EVERY_DAY_RE = /\b(?:every day|daily)\b/i;
-const UNTIL_RE = /\b(?:through|until|thru)\s+([^.,;]+)/i;
+// Non-greedy with a lookahead boundary: without it, text like "until
+// december 20 from 4-6 pm" (no punctuation between the until-date and a
+// following time range) got captured whole as the "until date," leaving
+// nothing behind for the time-of-day chrono pass below and silently
+// producing an all-day event. The lookahead stops the capture before a
+// time-range-introducing word ("from"/"at"), punctuation, or the end of
+// the string — whichever comes first.
+const UNTIL_RE = /\b(?:through|until|thru)\s+([^.,;]+?)(?=\s+\b(?:from|at)\b|[.,;]|$)/i;
 
 interface LocalRecurrenceMatch {
   freq: "DAILY" | "WEEKLY";
