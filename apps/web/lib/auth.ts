@@ -102,6 +102,40 @@ export const authOptions: NextAuthOptions = {
       // the onboarding gate instead of the calendar.
       if (account && user) {
         const familyId = await getFamilyIdForUser(user.id);
+
+        // next-auth's core callback handler only calls adapter.linkAccount()
+        // the FIRST time this Google account is ever linked — on every
+        // subsequent sign-in it just re-validates and returns, without
+        // touching the Account row at all (see
+        // core/lib/callback-handler.js's `if (userByAccount) { ... return }`
+        // branch). But because of `prompt: "consent"` above, Google mints a
+        // brand new access_token/refresh_token on EVERY sign-in — those
+        // fresh tokens land right here in `account`, then would otherwise be
+        // thrown away, leaving the database stuck with whatever token was
+        // stored at initial link time. That's exactly what let a stale/
+        // revoked refresh_token sit unnoticed: signing out and back in
+        // looked like it worked, but silently kept using the old DB row the
+        // whole time, since nothing had ever written the new one back. This
+        // is the combined family calendar's actual source of truth (see
+        // getValidAccessTokenForAccount in lib/google-calendar.ts), so we
+        // persist the fresh tokens here on every sign-in, not just the
+        // first.
+        try {
+          await prisma.account.update({
+            where: { provider_providerAccountId: { provider: account.provider, providerAccountId: account.providerAccountId } },
+            data: {
+              access_token: account.access_token,
+              refresh_token: account.refresh_token ?? undefined,
+              expires_at: account.expires_at,
+              token_type: account.token_type,
+              scope: account.scope,
+              id_token: account.id_token
+            }
+          });
+        } catch (error) {
+          console.error("Failed to persist refreshed Google tokens to Account row", user.id, error);
+        }
+
         return {
           ...token,
           userId: user.id,
