@@ -34,6 +34,9 @@ export async function GET(request: Request) {
     }
   });
 
+  // `needsReconnect`: the member's Google grant is gone and only they can
+  // fix it by signing in again. `unavailable`: a temporary failure.
+  const needsReconnect: string[] = [];
   const unavailable: string[] = [];
 
   // Every family member's hidden-event picks, grouped by whose events they
@@ -55,18 +58,21 @@ export async function GET(request: Request) {
       const account = membership.user.accounts[0];
       if (!account) return [];
 
-      const accessToken = await getValidAccessTokenForAccount(account);
-      if (!accessToken) {
-        unavailable.push(membership.user.name ?? "A family member");
+      const memberName = membership.user.name ?? "A family member";
+      const tokenResult = await getValidAccessTokenForAccount(account);
+      if (!tokenResult.ok) {
+        (tokenResult.reason === "reconnect" ? needsReconnect : unavailable).push(memberName);
         return [];
       }
 
       try {
-        const calendar = calendarClientFor(accessToken);
+        const calendar = calendarClientFor(tokenResult.accessToken);
         const calendarList = await calendar.calendarList.list();
         const calendars = calendarList.data.items ?? [];
 
-        const eventsByCalendar = await Promise.all(
+        // One broken calendar (e.g. a stale subscription that 404s)
+        // shouldn't hide everything else on this member's account.
+        const settled = await Promise.allSettled(
           calendars.map(async (cal) => {
             if (!cal.id) return [];
             const res = await calendar.events.list({
@@ -89,12 +95,19 @@ export async function GET(request: Request) {
           })
         );
 
-        const normalized = eventsByCalendar.flat();
+        const normalized = settled.flatMap((result, i) => {
+          if (result.status === "fulfilled") return result.value;
+          console.error(
+            `Failed to fetch calendar ${calendars[i]?.id} for ${membership.user.name}`,
+            result.reason
+          );
+          return [];
+        });
         const hidden = hiddenByOwner.get(membership.userId);
         return hidden ? normalized.filter((e) => !hidden.has(`${e.calendarId}::${e.id}`)) : normalized;
       } catch (error) {
         console.error(`Failed to fetch calendar events for ${membership.user.name}`, error);
-        unavailable.push(membership.user.name ?? "A family member");
+        unavailable.push(memberName);
         return [];
       }
     })
@@ -109,8 +122,9 @@ export async function GET(request: Request) {
       name: m.user.name,
       color: m.color,
       role: m.role,
-      connected: m.user.accounts.length > 0
+      connected: Boolean(m.user.accounts[0]?.refresh_token)
     })),
+    needsReconnect,
     unavailable
   });
 }
@@ -169,13 +183,19 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Connect your Google account first" }, { status: 400 });
   }
 
-  const accessToken = await getValidAccessTokenForAccount(account);
-  if (!accessToken) {
+  const tokenResult = await getValidAccessTokenForAccount(account);
+  if (!tokenResult.ok) {
     return NextResponse.json(
-      { error: "Your Google Calendar isn't connected right now" },
+      {
+        error:
+          tokenResult.reason === "reconnect"
+            ? "Your Google Calendar connection expired — sign in again to reconnect it"
+            : "Couldn't reach Google Calendar right now"
+      },
       { status: 502 }
     );
   }
+  const accessToken = tokenResult.accessToken;
 
   // All-day events use `date` (a bare "YYYY-MM-DD", already unambiguous —
   // no time-of-day to attach a zone to), so timeZone only applies to the

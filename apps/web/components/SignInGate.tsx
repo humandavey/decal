@@ -7,7 +7,9 @@ import { Browser } from "@capacitor/browser";
 import { App as CapacitorApp } from "@capacitor/app";
 import { checkServerReachable, normalizeServerUrl, saveServerUrl } from "@/lib/nativeServerPreference";
 
-export function SignInGate() {
+/** `reconnect`: the viewer is signed in, but their stored Google grant has
+ * expired or been revoked, so the family calendar can't read their events. */
+export function SignInGate({ reconnect = false }: { reconnect?: boolean }) {
   // Capacitor.isNativePlatform() touches `window`, so this is computed
   // after mount rather than during render — safe for SSR/hydration, and
   // correct either way since it's false in every non-native context
@@ -206,17 +208,33 @@ export function SignInGate() {
     <div style={styles.wrap}>
       <div style={styles.card}>
         <p style={styles.eyebrow}>Decal</p>
-        <h1 style={styles.headline}>
-          The wall calendar,
-          <br />
-          <em>without the subscription.</em>
-        </h1>
-        <p style={styles.copy}>
-          Connect a Google account to pull in everyone&rsquo;s calendars. Nothing is
-          stored anywhere but this screen.
-        </p>
+        {reconnect ? (
+          <>
+            <h1 style={styles.headline}>
+              Your calendar
+              <br />
+              <em>got disconnected.</em>
+            </h1>
+            <p style={styles.copy}>
+              Your Google Calendar connection expired. Reconnect to keep your events on
+              the family calendar.
+            </p>
+          </>
+        ) : (
+          <>
+            <h1 style={styles.headline}>
+              The wall calendar,
+              <br />
+              <em>without the subscription.</em>
+            </h1>
+            <p style={styles.copy}>
+              Connect a Google account to pull in everyone&rsquo;s calendars. Nothing is
+              stored anywhere but this screen.
+            </p>
+          </>
+        )}
         <button style={styles.button} onClick={connect}>
-          Connect Google Calendar
+          {reconnect ? "Reconnect Google Calendar" : "Connect Google Calendar"}
         </button>
         {connectError && <p style={styles.connectError}>{connectError}</p>}
 

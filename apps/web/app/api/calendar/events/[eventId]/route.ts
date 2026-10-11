@@ -43,13 +43,19 @@ export async function PATCH(request: Request, { params }: { params: { eventId: s
   const resolved = await resolveOwnerAccount(session.familyId, memberId);
   if (!resolved) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  const accessToken = await getValidAccessTokenForAccount(resolved.account);
-  if (!accessToken) {
+  const tokenResult = await getValidAccessTokenForAccount(resolved.account);
+  if (!tokenResult.ok) {
     return NextResponse.json(
-      { error: "That family member's calendar isn't connected right now" },
+      {
+        error:
+          tokenResult.reason === "reconnect"
+            ? "That family member needs to sign in again to reconnect their calendar"
+            : "Couldn't reach that family member's calendar right now"
+      },
       { status: 502 }
     );
   }
+  const accessToken = tokenResult.accessToken;
 
   const body = await request.json().catch(() => ({}));
   const { title, description, location, start, end, allDay } = body as {

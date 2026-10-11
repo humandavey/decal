@@ -91,6 +91,7 @@ export function CalendarBoard() {
   const [failedMonths, setFailedMonths] = useState<Set<string>>(new Set());
   const [members, setMembers] = useState<FamilyMemberSummary[]>([]);
   const [unavailable, setUnavailable] = useState<string[]>([]);
+  const [needsReconnect, setNeedsReconnect] = useState<string[]>([]);
   const [hiddenMemberIds, setHiddenMemberIds] = useState<Set<string>>(new Set());
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
   const [showFamilyModal, setShowFamilyModal] = useState(false);
@@ -181,6 +182,7 @@ export function CalendarBoard() {
       });
       setMembers(data.members ?? []);
       setUnavailable(data.unavailable ?? []);
+      setNeedsReconnect(data.needsReconnect ?? []);
       setFailedMonths((prev) => {
         if (!prev.has(key)) return prev;
         const next = new Set(prev);
@@ -397,10 +399,17 @@ export function CalendarBoard() {
             </p>
           )}
 
+          {!allMonthsFailed && needsReconnect.length > 0 && (
+            <p style={styles.warnBanner}>
+              {needsReconnect.join(", ")} {needsReconnect.length === 1 ? "needs" : "need"} to sign in to
+              Decal again to reconnect {needsReconnect.length === 1 ? "their calendar" : "their calendars"}.
+            </p>
+          )}
+
           {!allMonthsFailed && unavailable.length > 0 && (
             <p style={styles.warnBanner}>
-              {unavailable.join(", ")} {unavailable.length === 1 ? "isn't" : "aren't"} showing up —
-              their calendar isn&rsquo;t connected right now.
+              {unavailable.length === 1 ? `${unavailable[0]}'s calendar` : `${unavailable.join(", ")}'s calendars`}{" "}
+              couldn&rsquo;t be loaded right now.
             </p>
           )}
 

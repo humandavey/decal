@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { SignInGate } from "@/components/SignInGate";
 import { FamilyOnboarding } from "@/components/FamilyOnboarding";
 import { MobileShell } from "@/components/mobile/MobileShell";
+import { viewerNeedsReconnect } from "@/lib/google-calendar";
 
 // `viewportFit: "cover"` is what makes the `env(safe-area-inset-*)` values
 // MobileShell relies on actually resolve to something other than 0 — the
@@ -31,6 +32,10 @@ export default async function MobileLayout({ children }: { children: React.React
 
   if (!session.familyId) {
     return <FamilyOnboarding />;
+  }
+
+  if (session.userId && (await viewerNeedsReconnect(session.userId))) {
+    return <SignInGate reconnect />;
   }
 
   return <MobileShell>{children}</MobileShell>;
